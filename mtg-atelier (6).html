@@ -1,0 +1,2118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Atelier — construction de deck Magic</title>
+<style>
+:root{
+  --bg:#15121c; --bg2:#1c1826; --panel:#221d2e; --panel2:#2a2439;
+  --line:#3a3350; --line2:#4b4268;
+  --txt:#e8e3f2; --dim:#a49bbd; --dim2:#7d7398;
+}
+:root{
+  --brass:#d3a441; --brass-d:#8a6c22;
+  --W:#efe0bc; --U:#4b8fd0; --B:#8f6fc0; --R:#d3573f; --G:#4f9f68; --C:#98a0b2;
+  --ok:#4f9f68; --warn:#d3a441; --bad:#d3573f;
+  --r:10px;
+  --display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #2a2340 0%, transparent 60%),
+    var(--bg);
+  color:var(--txt); font-family:var(--body); font-size:15px; line-height:1.45;
+  -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{font-family:var(--display); font-weight:600; margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.wrap{max-width:1180px;margin:0 auto;padding:12px 12px 80px}
+
+/* ---------- en-tête ---------- */
+header.top{
+  position:sticky; top:0; z-index:40;
+  background:linear-gradient(180deg,#1b1728 0%,rgba(27,23,40,.94) 100%);
+  border-bottom:1px solid var(--line);
+  backdrop-filter:blur(8px);
+}
+.top-in{max-width:1180px;margin:0 auto;padding:10px 12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+.brand h1{font-size:19px;letter-spacing:.3px}
+.brand .sub{color:var(--dim2);font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+.top-stats{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pill{
+  font-family:var(--mono);font-size:11.5px;padding:4px 9px;border-radius:99px;
+  border:1px solid var(--line2); background:var(--panel); color:var(--dim);white-space:nowrap
+}
+.pill b{color:var(--txt);font-weight:600}
+
+/* ---------- sections repliables ---------- */
+section.sec{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);margin:14px 0;overflow:hidden}
+.sec-head{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:12px 14px;background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:0;border-bottom:1px solid transparent;text-align:left
+}
+.sec.open .sec-head{border-bottom-color:var(--line)}
+.sec-head .letter{
+  font-family:var(--display);font-size:14px;width:26px;height:26px;flex:0 0 26px;
+  display:grid;place-items:center;border-radius:6px;
+  background:var(--brass-d);color:#1a1526;font-weight:700
+}
+.sec-head h2{font-size:16px;flex:1;min-width:0}
+.sec-head .hint{color:var(--dim2);font-size:12px;font-family:var(--mono)}
+.chev{transition:transform .18s ease;color:var(--dim);flex:0 0 auto}
+.sec.open .chev{transform:rotate(90deg)}
+.sec-body{display:none;padding:14px}
+.sec.open .sec-body{display:block}
+
+/* ---------- contrôles ---------- */
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.field{display:flex;flex-direction:column;gap:4px}
+label.lab{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim2)}
+input[type=text],input[type=number],select,textarea{
+  background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0
+}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
+.btn{
+  background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:7px 12px;font-size:13.5px
+}
+.btn:hover{border-color:var(--brass);color:#fff}
+.btn.pri{background:var(--brass);border-color:var(--brass);color:#1a1526;font-weight:600}
+.btn.danger{border-color:#6d3030;color:#e39a90}
+.btn.sm{padding:3px 8px;font-size:12px;border-radius:6px}
+.btn[aria-pressed=true]{background:var(--brass);border-color:var(--brass);color:#1a1526;font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:6px 11px;font-size:13px;color:var(--dim)}
+.seg button[aria-pressed=true]{background:var(--panel2);color:var(--txt);box-shadow:inset 0 -2px 0 var(--brass)}
+
+/* pastilles de mana */
+.mana{
+  width:24px;height:24px;border-radius:99px;display:grid;place-items:center;
+  font-family:var(--display);font-weight:700;font-size:13px;color:#1a1526;
+  border:1px solid rgba(0,0,0,.35)
+}
+.mana.W{background:var(--W)} .mana.U{background:var(--U)} .mana.B{background:var(--B)}
+.mana.R{background:var(--R)} .mana.G{background:var(--G)} .mana.C{background:var(--C)}
+.mana.gen{background:#c8c3d4}
+.mana.sm{width:17px;height:17px;font-size:10px}
+.mana-btn{border:2px solid transparent;padding:2px;border-radius:99px;background:transparent;line-height:0}
+.mana-btn[aria-pressed=true]{border-color:var(--brass);background:rgba(211,164,65,.16)}
+.mana-btn[aria-pressed=false]{opacity:.42;filter:saturate(.5)}
+
+/* ---------- cartes ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:9px}
+.cardT{
+  position:relative;border:1px solid var(--line);border-radius:9px;padding:8px 8px 7px;
+  background:linear-gradient(160deg,var(--panel2),var(--bg2));text-align:left;width:100%;
+  display:flex;flex-direction:column;gap:5px;min-height:104px
+}
+.cardT:hover{border-color:var(--brass)}
+.cardT.sel{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}
+.cimg{width:100%;aspect-ratio:488/680;object-fit:cover;border-radius:6px;background:#191524;display:block}
+.cardT.withimg{padding:5px;gap:4px}
+.cardT.withimg .cname{font-size:12px}
+.detail .dimg{float:right;width:min(190px,38%);border-radius:9px;margin:0 0 8px 12px;background:#191524}
+.imgwrap{position:relative}
+.imgwrap .badge{position:absolute;left:5px;top:5px;font-size:9.5px;padding:1px 5px;border-radius:4px;
+  background:rgba(20,16,30,.85);border:1px solid var(--brass);color:var(--brass)}
+.cardT .cname{font-family:var(--display);font-size:13.5px;line-height:1.2;padding-right:4px}
+.cardT .ctype{font-size:11px;color:var(--dim2)}
+.cardT .costs{display:flex;gap:2px;flex-wrap:wrap}
+.cardT .foot{margin-top:auto;display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.stripe{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:9px 0 0 9px}
+.tags{display:flex;gap:3px;flex-wrap:wrap}
+.tag{font-size:9.5px;letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:#332c47;color:#c3b8dd;border:1px solid var(--line)}
+.qty{display:inline-flex;align-items:center;gap:4px;margin-left:auto}
+.qty button{width:22px;height:22px;border-radius:6px;border:1px solid var(--line2);background:var(--panel);line-height:1}
+.list{display:flex;flex-direction:column;gap:4px}
+.lrow{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
+.lrow .cname{font-family:var(--display);font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.muted{color:var(--dim2)}
+.small{font-size:12px}
+.mono{font-family:var(--mono)}
+
+/* ---------- stats ---------- */
+.statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg2)}
+.stat .v{font-family:var(--display);font-size:22px;line-height:1.1}
+.stat .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim2)}
+.bars{display:flex;align-items:flex-end;gap:5px;height:150px;padding:8px 4px 0;border-bottom:1px solid var(--line)}
+.bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;min-width:0}
+.bseg{width:100%;border-radius:2px}
+.bar .n{font-family:var(--mono);font-size:10px;text-align:center;color:var(--dim)}
+.blabels{display:flex;gap:5px;padding:3px 4px}
+.blabels div{flex:1;text-align:center;font-family:var(--mono);font-size:10.5px;color:var(--dim2)}
+table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+table.tbl th,table.tbl td{border-bottom:1px solid var(--line);padding:5px 6px;text-align:right}
+table.tbl th:first-child,table.tbl td:first-child{text-align:left}
+table.tbl th{color:var(--dim2);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ---------- graphe ---------- */
+.graphbox{background:radial-gradient(circle at 50% 50%,#221c31 0%,#171322 70%);border:1px solid var(--line);border-radius:var(--r);padding:4px}
+.graphbox svg{width:100%;height:auto;display:block;touch-action:manipulation}
+.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.lg{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);background:var(--bg2);border:1px solid var(--line);border-radius:99px;padding:2px 8px}
+.dot{width:9px;height:9px;border-radius:99px;display:inline-block}
+.combo{border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:8px;padding:8px 10px;background:var(--bg2);margin-bottom:6px}
+.combo .path{font-family:var(--mono);font-size:11.5px;color:var(--brass)}
+
+/* ---------- jauges ---------- */
+.gauge{display:grid;grid-template-columns:1fr;gap:3px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg2)}
+.gauge .top{display:flex;justify-content:space-between;font-size:12.5px}
+.track{height:6px;border-radius:99px;background:#2f2942;overflow:hidden}
+.fill{height:100%;border-radius:99px}
+
+/* ---------- panneau détail ---------- */
+.detail{border:1px solid var(--brass-d);border-radius:var(--r);background:linear-gradient(180deg,#241f33,#1c1826);padding:12px;margin-top:10px}
+.detail h3{font-size:16px;margin-bottom:2px}
+.otext{white-space:pre-line;font-size:12.5px;color:#cfc7e4;border-left:2px solid var(--line2);padding-left:9px;margin:8px 0}
+.chips{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
+.chip{font-size:11px;padding:2px 7px;border-radius:99px;border:1px solid var(--line2);background:var(--panel2);color:var(--dim)}
+.chip.on{border-color:var(--brass);color:var(--brass)}
+.arc{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+.arc b{color:var(--txt);font-weight:500}
+
+.group{border:1px solid var(--line);border-radius:9px;padding:10px;background:var(--bg2);margin-bottom:9px}
+.group>h4{margin:0 0 7px;font-family:var(--display);font-size:14px;display:flex;gap:8px;align-items:center}
+.why{font-size:11.5px;color:var(--dim);margin-top:3px}
+.buy{color:var(--brass);font-family:var(--mono);font-size:11px}
+.warnbox{border:1px solid var(--brass-d);background:rgba(211,164,65,.09);border-radius:8px;padding:8px 10px;font-size:12.5px;margin:8px 0}
+.empty{color:var(--dim2);font-size:13px;padding:14px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+dialog{border:1px solid var(--line2);border-radius:var(--r);background:var(--panel);color:var(--txt);max-width:min(560px,94vw);padding:0}
+dialog::backdrop{background:rgba(8,6,14,.7)}
+.dlg-h{padding:12px 14px;border-bottom:1px solid var(--line);font-family:var(--display);font-size:16px}
+.dlg-b{padding:14px;display:flex;flex-direction:column;gap:10px;max-height:min(68vh,620px);overflow:auto}
+dialog.wide{max-width:min(760px,96vw)}
+.fiche{display:flex;gap:14px;flex-wrap:wrap}
+.fiche .visu{width:min(230px,42%);border-radius:10px;background:#191524;flex:0 0 auto}
+.fiche .meta{flex:1;min-width:200px}
+.bloc{border-top:1px solid var(--line);padding-top:9px}
+.bloc>h4{margin:0 0 6px;font-family:var(--display);font-size:14px}
+.puce{font-size:12.5px;margin:2px 0 2px 2px;padding-left:12px;position:relative}
+.puce::before{content:'▸';position:absolute;left:0;color:var(--brass)}
+@media (max-width:520px){ .fiche .visu{width:100%;max-width:260px;margin:0 auto} }
+.dlg-f{padding:12px 14px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+textarea{width:100%;min-height:150px;font-family:var(--mono);font-size:12px}
+@media (max-width:640px){
+  .wrap{padding:8px 8px 70px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:7px}
+  .brand h1{font-size:17px} .brand .sub{display:none}
+  .sec-head{padding:11px 10px} .sec-body{padding:10px}
+  .bars{height:120px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <h1>Atelier</h1><span class="sub">construction de deck</span>
+    </div>
+    <div class="top-stats" id="topStats"></div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="sec open" id="secA">
+    <button class="sec-head" data-toggle="secA"><span class="letter">A</span><h2>Filtres &amp; format</h2><span class="hint" id="hintA"></span><span class="chev">▶</span></button>
+    <div class="sec-body" id="bodyA"></div>
+  </section>
+
+  <section class="sec open" id="secB">
+    <button class="sec-head" data-toggle="secB"><span class="letter">B</span><h2>Collection</h2><span class="hint" id="hintB"></span><span class="chev">▶</span></button>
+    <div class="sec-body" id="bodyB"></div>
+  </section>
+
+  <section class="sec" id="secC">
+    <button class="sec-head" data-toggle="secC"><span class="letter">C</span><h2>Statistiques</h2><span class="hint" id="hintC"></span><span class="chev">▶</span></button>
+    <div class="sec-body" id="bodyC"></div>
+  </section>
+
+  <section class="sec" id="secD">
+    <button class="sec-head" data-toggle="secD"><span class="letter">D</span><h2>Graphe des capacités</h2><span class="hint" id="hintD"></span><span class="chev">▶</span></button>
+    <div class="sec-body" id="bodyD"></div>
+  </section>
+
+  <section class="sec" id="secE">
+    <button class="sec-head" data-toggle="secE"><span class="letter">E</span><h2>Deck</h2><span class="hint" id="hintE"></span><span class="chev">▶</span></button>
+    <div class="sec-body" id="bodyE"></div>
+  </section>
+
+  <section class="sec" id="secF">
+    <button class="sec-head" data-toggle="secF"><span class="letter">F</span><h2>Suggestions d'ajout</h2><span class="hint" id="hintF"></span><span class="chev">▶</span></button>
+    <div class="sec-body" id="bodyF"></div>
+  </section>
+
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm">
+  <div class="dlg-h" id="dlgTitle"></div>
+  <div class="dlg-b" id="dlgBody"></div>
+  <div class="dlg-f" id="dlgFoot"></div>
+</form></dialog>
+
+<script>
+/* =====================================================================
+   1. BASE DE CARTES  —  nom | coût | type | prix(€) | texte (" // " = saut)
+   ===================================================================== */
+const RAW = `
+Swords to Plowshares|{W}|Instant|1.5|Exile target creature. Its controller gains life equal to its power.
+Path to Exile|{W}|Instant|3|Exile target creature. Its controller may search their library for a basic land card, put it onto the battlefield tapped, then shuffle.
+Mother of Runes|{W}|Creature — Human Cleric|8|{T}: Target creature you control gains protection from the color of your choice until end of turn.
+Esper Sentinel|{W}|Artifact Creature — Human Soldier|20|Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player pays {1} for each artifact you control.
+Thalia, Guardian of Thraben|{1}{W}|Legendary Creature — Human Soldier|3|First strike // Noncreature spells cost {1} more to cast.
+Land Tax|{W}|Enchantment|10|At the beginning of your upkeep, if an opponent controls more lands than you, you may search your library for up to three basic land cards, reveal them, put them into your hand, then shuffle.
+Blade Splicer|{2}{W}|Creature — Human Artificer|1|When Blade Splicer enters, create a 3/3 colorless Phyrexian Golem artifact creature token. // Golem creatures you control have first strike.
+Skyclave Apparition|{1}{W}{W}|Creature — Kor Spirit|5|When Skyclave Apparition enters, exile target nonland, nontoken permanent an opponent controls with mana value 4 or less.
+Welcoming Vampire|{2}{W}|Creature — Vampire|2|Flying // Whenever another creature with power 2 or less you control enters, draw a card. This ability triggers only once each turn.
+Sram, Senior Edificer|{1}{W}|Legendary Creature — Dwarf Advisor|2|Whenever you cast an Aura, Equipment, or Vehicle spell, draw a card.
+Restoration Angel|{3}{W}|Creature — Angel|1|Flash // Flying // When Restoration Angel enters, you may exile target non-Angel creature you control, then return that card to the battlefield under its owner's control.
+Ephemerate|{W}|Instant|2|Exile target creature you control, then return it to the battlefield under its owner's control.
+Felidar Guardian|{2}{W}|Creature — Cat Beast|1|When Felidar Guardian enters, you may exile another target permanent you control, then return it to the battlefield under its owner's control.
+Sun Titan|{4}{W}{W}|Creature — Giant|1|Flying // Whenever Sun Titan enters or attacks, return target permanent card with mana value 3 or less from your graveyard to the battlefield.
+Smothering Tithe|{3}{W}|Enchantment|18|Whenever an opponent draws a card, that player may pay {2}. If the player doesn't, you create a Treasure token.
+Anointed Procession|{3}{W}|Enchantment|22|If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.
+Cathars' Crusade|{3}{W}{W}|Enchantment|8|Whenever a creature you control enters, put a +1/+1 counter on each creature you control.
+Archon of Emeria|{2}{W}|Creature — Archon|3|Flying // Each player can't cast more than one spell each turn. // Nonbasic lands your opponents control enter tapped.
+Enlightened Tutor|{W}|Instant|20|Search your library for an artifact or enchantment card, reveal it, then shuffle and put that card on top.
+Wrath of God|{2}{W}{W}|Sorcery|10|Destroy all creatures. They can't be regenerated.
+Ranger-Captain of Eos|{1}{W}{W}|Creature — Human Soldier|9|When Ranger-Captain of Eos enters, search your library for a creature card with mana value 1 or less, reveal it, put it into your hand, then shuffle. // Sacrifice Ranger-Captain of Eos: Your opponents can't cast noncreature spells this turn.
+Rhystic Study|{2}{U}|Enchantment|28|Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.
+Mystic Remora|{U}|Enchantment|12|Whenever an opponent casts a noncreature spell, you may draw a card unless that player pays {4}.
+Counterspell|{U}{U}|Instant|1|Counter target spell.
+Brainstorm|{U}|Instant|0.5|Draw three cards, then put two cards from your hand on top of your library in any order.
+Preordain|{U}|Sorcery|1|Scry 2, then draw a card.
+Mystical Tutor|{U}|Instant|15|Search your library for an instant or sorcery card, reveal it, shuffle, then put that card on top of your library.
+Cyclonic Rift|{1}{U}|Instant|25|Return target nonland permanent you don't control to its owner's hand.
+Pongify|{U}|Instant|3|Destroy target creature. Its controller creates a 3/3 green Ape creature token.
+Snapcaster Mage|{1}{U}|Creature — Human Wizard|12|Flash // When Snapcaster Mage enters, target instant or sorcery card in your graveyard gains flashback until end of turn.
+Archaeomancer|{2}{U}{U}|Creature — Human Wizard|0.5|When Archaeomancer enters, return target instant or sorcery card from your graveyard to your hand.
+Peregrine Drake|{4}{U}|Creature — Drake|1|Flying // When Peregrine Drake enters, untap up to five lands.
+Ghostly Flicker|{2}{U}|Instant|1|Exile two target artifacts, creatures, and/or lands you control, then return those cards to the battlefield under your control.
+Deadeye Navigator|{3}{U}{U}|Creature — Spirit|3|Soulbond // As long as Deadeye Navigator is paired with another creature, each of those creatures has "{1}{U}: Exile this creature, then return it to the battlefield under its owner's control."
+Thassa, Deep-Dwelling|{2}{U}|Legendary Creature — God|8|Indestructible // At the beginning of your end step, exile up to one other target creature you control, then return that card to the battlefield under its owner's control. // {3}{U}: Tap target creature.
+Displacer Kitten|{2}{U}|Creature — Cat Beast|24|Whenever you cast a noncreature spell, exile another target nonland permanent you control, then return it to the battlefield under its owner's control.
+Talrand, Sky Summoner|{2}{U}|Legendary Creature — Merfolk Wizard|1|Whenever you cast an instant or sorcery spell, create a 2/2 blue Drake creature token with flying.
+Murmuring Mystic|{3}{U}|Creature — Human Wizard|1|Defender // Whenever you cast an instant or sorcery spell, create a 1/1 blue Bird Illusion creature token with flying.
+Consecrated Sphinx|{4}{U}{U}|Creature — Sphinx|18|Flying // Whenever an opponent draws a card, you may draw two cards.
+Propaganda|{2}{U}|Enchantment|3|Creatures can't attack you unless their controller pays {2} for each creature they control that's attacking you.
+Curiosity|{U}|Enchantment — Aura|2|Enchant creature // Whenever enchanted creature deals damage to a player, draw a card.
+Tandem Lookout|{3}{U}|Creature — Human Scout|1|Soulbond // As long as Tandem Lookout is paired with another creature, each of those creatures has "Whenever this creature deals damage to a player, draw a card."
+Demonic Tutor|{1}{B}|Sorcery|22|Search your library for a card, put that card into your hand, then shuffle.
+Dark Ritual|{B}|Instant|2|Add {B}{B}{B}.
+Village Rites|{B}|Instant|0.5|As an additional cost to cast this spell, sacrifice a creature. // Draw two cards.
+Viscera Seer|{B}|Creature — Vampire Wizard|1|Sacrifice a creature: Scry 1.
+Blood Artist|{1}{B}|Creature — Vampire|3|Whenever Blood Artist or another creature dies, target player loses 1 life and you gain 1 life.
+Zulaport Cutthroat|{1}{B}|Creature — Human Rogue|1|Whenever Zulaport Cutthroat or another creature you control dies, each opponent loses 1 life and you gain 1 life.
+Pitiless Plunderer|{3}{B}|Creature — Human Pirate|3|Whenever another creature you control dies, create a Treasure token.
+Midnight Reaper|{2}{B}|Creature — Zombie Cleric|1|Whenever a nontoken creature you control dies, you lose 1 life and draw a card.
+Gravecrawler|{B}|Creature — Zombie|3|Gravecrawler can't block. // You may cast Gravecrawler from your graveyard as long as you control a Zombie.
+Reanimate|{B}|Sorcery|8|Return target creature card from a graveyard to the battlefield under your control. You lose life equal to its mana value.
+Animate Dead|{1}{B}|Enchantment — Aura|12|When Animate Dead enters, return enchanted creature card to the battlefield under your control and attach Animate Dead to it.
+Grave Titan|{4}{B}{B}|Creature — Giant|8|Deathtouch // Whenever Grave Titan enters or attacks, create two 2/2 black Zombie creature tokens.
+Sidisi, Undead Vizier|{3}{B}{B}|Legendary Creature — Naga Shaman|1|Deathtouch // When Sidisi, Undead Vizier exploits a creature, search your library for a card, put it into your hand, then shuffle.
+Infernal Grasp|{1}{B}|Instant|1|Destroy target creature. You lose 2 life.
+Damnation|{2}{B}{B}|Sorcery|9|Destroy all creatures. They can't be regenerated.
+Bitterblossom|{B}|Enchantment|20|At the beginning of your upkeep, you lose 1 life and create a 1/1 black Faerie Rogue creature token with flying.
+Necropotence|{B}{B}{B}|Enchantment|20|Skip your draw step. // Pay 1 life: Exile the top card of your library face down. Put that card into your hand at the beginning of your next end step.
+Bolas's Citadel|{3}{B}{B}{B}|Legendary Artifact|10|You may play lands and cast spells from the top of your library. If you cast a spell this way, pay life equal to its mana value rather than paying its mana cost. // {T}, Sacrifice ten nonland permanents: Each opponent loses 10 life.
+Lightning Bolt|{R}|Instant|2|Lightning Bolt deals 3 damage to any target.
+Chaos Warp|{2}{R}|Instant|2|The owner of target permanent shuffles it into their library, then reveals the top card of their library. If it's a permanent card, they put it onto the battlefield.
+Vandalblast|{R}|Sorcery|1|Destroy target artifact you don't control.
+Goblin Bombardment|{1}{R}|Enchantment|7|Sacrifice a creature: Goblin Bombardment deals 1 damage to any target.
+Impact Tremors|{1}{R}|Enchantment|1|Whenever a creature you control enters, Impact Tremors deals 1 damage to each opponent.
+Purphoros, God of the Forge|{3}{R}|Legendary Enchantment Creature — God|10|Indestructible // Whenever another creature you control enters, Purphoros deals 2 damage to each opponent. // {2}{R}: Creatures you control get +1/+0 until end of turn.
+Krenko, Mob Boss|{2}{R}{R}|Legendary Creature — Goblin Warrior|4|{T}: Create X 1/1 red Goblin creature tokens, where X is the number of Goblins you control.
+Kiki-Jiki, Mirror Breaker|{2}{R}{R}{R}|Legendary Creature — Goblin Shaman|22|Haste // {T}: Create a token that's a copy of target nonlegendary creature you control, except it has haste. Sacrifice it at the beginning of the next end step.
+Zealous Conscripts|{4}{R}|Creature — Human Warrior|1|Haste // When Zealous Conscripts enters, untap target permanent. Gain control of it until end of turn. It gains haste until end of turn.
+Storm-Kiln Artist|{3}{R}|Creature — Dwarf Shaman|3|Trample // Whenever you cast an instant or sorcery spell, create a Treasure token.
+Birgi, God of Storytelling|{2}{R}|Legendary Creature — God|7|Whenever you cast a spell, add {R}. Spend this mana only to cast spells.
+Jeska's Will|{2}{R}|Sorcery|12|Add {R} for each card in target opponent's hand.
+Blasphemous Act|{8}{R}|Sorcery|3|This spell costs {1} less to cast for each creature on the battlefield. // Blasphemous Act deals 13 damage to each creature.
+Underworld Breach|{1}{R}|Enchantment|12|Each nonland card in your graveyard has escape. The escape cost is equal to the card's mana cost plus exile three other cards from your graveyard.
+Dockside Extortionist|{1}{R}|Creature — Goblin Pirate|45|When Dockside Extortionist enters, create X Treasure tokens, where X is the number of artifacts and enchantments your opponents control.
+Terror of the Peaks|{3}{R}{R}|Creature — Dragon|20|Flying // Whenever another creature you control enters, Terror of the Peaks deals damage equal to that creature's power to any target.
+Llanowar Elves|{G}|Creature — Elf Druid|0.5|{T}: Add {G}.
+Birds of Paradise|{G}|Creature — Bird|8|Flying // {T}: Add one mana of any color.
+Sakura-Tribe Elder|{1}{G}|Creature — Snake Shaman|1|Sacrifice Sakura-Tribe Elder: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.
+Farhaven Elf|{2}{G}|Creature — Elf Druid|0.5|When Farhaven Elf enters, you may search your library for a basic land card, put it onto the battlefield tapped, then shuffle.
+Cultivate|{2}{G}|Sorcery|1|Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle.
+Eternal Witness|{1}{G}{G}|Creature — Human Shaman|3|When Eternal Witness enters, return target card from your graveyard to your hand.
+Beast Whisperer|{2}{G}{G}|Creature — Elf Druid|1|Whenever you cast a creature spell, draw a card.
+Guardian Project|{3}{G}|Enchantment|4|Whenever a nontoken creature you control enters, draw a card.
+Sylvan Library|{1}{G}|Enchantment|35|At the beginning of your draw step, you may draw two additional cards. If you do, for each of those cards pay 4 life or put the card on top of your library.
+Fauna Shaman|{1}{G}{G}|Creature — Elf Shaman|10|{G}, {T}, Discard a creature card: Search your library for a creature card, reveal it, put it into your hand, then shuffle.
+Seedborn Muse|{3}{G}{G}|Creature — Spirit|9|Untap all permanents you control during each other player's untap step.
+Doubling Season|{4}{G}{G}|Enchantment|40|If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead. // If an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on it instead.
+Hardened Scales|{G}|Enchantment|3|If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead.
+Scute Swarm|{2}{G}|Creature — Insect|2|Whenever a land you control enters, create a 1/1 green Insect creature token. If you control six or more lands, create a token that's a copy of Scute Swarm instead.
+Tireless Provisioner|{2}{G}|Creature — Elf Scout|3|Whenever a land you control enters, you may create a Treasure token.
+Craterhoof Behemoth|{5}{G}{G}{G}|Creature — Beast|18|Haste // When Craterhoof Behemoth enters, creatures you control gain trample and get +X/+X until end of turn, where X is the number of creatures you control.
+Avenger of Zendikar|{5}{G}{G}|Creature — Elemental|4|When Avenger of Zendikar enters, create a 0/1 green Plant creature token for each land you control. // Whenever a land you control enters, you may put a +1/+1 counter on each Plant creature you control.
+Nature's Claim|{G}|Instant|1|Destroy target artifact or enchantment. Its controller gains 4 life.
+Green Sun's Zenith|{X}{G}|Sorcery|6|Search your library for a green creature card with mana value X or less, put it onto the battlefield, then shuffle.
+Wild Growth|{G}|Enchantment — Aura|1|Whenever enchanted land is tapped for mana, its controller adds an additional {G}.
+Sol Ring|{1}|Artifact|2|{T}: Add {C}{C}.
+Arcane Signet|{2}|Artifact|1|{T}: Add one mana of any color in your commander's color identity.
+Mind Stone|{2}|Artifact|1|{T}: Add {C}. // {1}, {T}, Sacrifice Mind Stone: Draw a card.
+Commander's Sphere|{3}|Artifact|0.5|{T}: Add one mana of any color in your commander's color identity. // Sacrifice Commander's Sphere: Draw a card.
+Ashnod's Altar|{3}|Artifact|20|Sacrifice a creature: Add {C}{C}.
+Phyrexian Altar|{4}|Artifact|35|Sacrifice a creature: Add one mana of any color.
+Skullclamp|{1}|Artifact — Equipment|4|Equipped creature gets +1/-1. // Whenever equipped creature dies, draw two cards.
+Nim Deathmantle|{2}|Artifact — Equipment|5|Equipped creature gets +2/+2. // Whenever a nontoken creature you control dies, you may pay {4}. If you do, return that card to the battlefield under your control and attach Nim Deathmantle to it.
+Basalt Monolith|{3}|Artifact|7|Basalt Monolith doesn't untap during your untap step. // {T}: Add {C}{C}{C}. // {3}: Untap Basalt Monolith.
+Rings of Brighthearth|{3}|Artifact|24|Whenever you activate an ability, if it isn't a mana ability, you may pay {2}. If you do, copy that ability.
+Sensei's Divining Top|{1}|Artifact|22|{1}: Look at the top three cards of your library, then put them back in any order. // {T}: Draw a card, then put Sensei's Divining Top on top of its owner's library.
+Lightning Greaves|{2}|Artifact — Equipment|4|Equipped creature has haste and shroud.
+Swiftfoot Boots|{2}|Artifact — Equipment|2|Equipped creature has hexproof and haste.
+Solemn Simulacrum|{4}|Artifact Creature — Golem|1|When Solemn Simulacrum enters, you may search your library for a basic land card, put it onto the battlefield tapped, then shuffle. // When Solemn Simulacrum dies, you may draw a card.
+Wurmcoil Engine|{6}|Artifact Creature — Phyrexian Wurm|9|Deathtouch, lifelink // When Wurmcoil Engine dies, create a 3/3 colorless Phyrexian Wurm artifact creature token with deathtouch and a 3/3 colorless Phyrexian Wurm artifact creature token with lifelink.
+Ruby Medallion|{2}|Artifact|8|Red spells you cast cost {1} less to cast.
+Meren of Clan Nel Toth|{2}{B}{G}|Legendary Creature — Human Shaman|4|Whenever another creature you control dies, you get an experience counter. // At the beginning of your end step, return target creature card from your graveyard to the battlefield or to your hand.
+Korvold, Fae-Cursed King|{2}{B}{R}{G}|Legendary Creature — Dragon Noble|7|Flying // Whenever Korvold, Fae-Cursed King enters or attacks, sacrifice another permanent. // Whenever you sacrifice a permanent, put a +1/+1 counter on Korvold and draw a card.
+Atraxa, Praetors' Voice|{G}{W}{U}{B}|Legendary Creature — Phyrexian Angel Horror|24|Flying, vigilance, deathtouch, lifelink // At the beginning of your end step, proliferate.
+Yarok, the Desecrated|{2}{B}{G}{U}|Legendary Creature — Elemental Horror|12|Deathtouch // If a permanent entering causes a triggered ability of a permanent you control to trigger, that ability triggers an additional time.
+Kykar, Wind's Fury|{1}{U}{R}{W}|Legendary Creature — Bird Wizard|3|Flying // Whenever you cast a noncreature spell, create a 1/1 white Spirit creature token with flying. // Sacrifice a Spirit: Add {R}.
+Prossh, Skyraider of Kher|{3}{B}{R}{G}|Legendary Creature — Dragon|5|Flying // When you cast this spell, create six 0/1 red Kobold creature tokens. // Sacrifice another creature: Prossh, Skyraider of Kher gets +1/+0 until end of turn.
+Chulane, Teller of Tales|{2}{G}{W}{U}|Legendary Creature — Human Druid|6|Vigilance // Whenever another creature you control enters, draw a card and you may put a land card from your hand onto the battlefield.
+Command Tower|—|Land|1|{T}: Add one mana of any color in your commander's color identity.
+Reliquary Tower|—|Land|1|You have no maximum hand size. // {T}: Add {C}.
+Ancient Tomb|—|Land|38|{T}: Add {C}{C}. Ancient Tomb deals 2 damage to you.
+Plains|—|Basic Land — Plains|0.2|{T}: Add {W}.
+Island|—|Basic Land — Island|0.2|{T}: Add {U}.
+Swamp|—|Basic Land — Swamp|0.2|{T}: Add {B}.
+Mountain|—|Basic Land — Mountain|0.2|{T}: Add {R}.
+Forest|—|Basic Land — Forest|0.2|{T}: Add {G}.
+`.trim();
+
+/* =====================================================================
+   2. ONTOLOGIE DES CAPACITÉS  (nœuds du graphe, ordonnés par proximité)
+   ===================================================================== */
+const GROUPS = {
+  cartes:      {label:'Cartes',        color:'#59b0e0'},
+  cimetiere:   {label:'Cimetière',     color:'#a077cf'},
+  board:       {label:'Développement', color:'#4fb07a'},
+  mana:        {label:'Mana',          color:'#d3a441'},
+  sorts:       {label:'Sorts',         color:'#57c9c4'},
+  interaction: {label:'Interaction',   color:'#d3573f'},
+  stax:        {label:'Contrôle',      color:'#8d93a6'},
+  vie:         {label:'Points de vie', color:'#e07a9c'},
+  combat:      {label:'Combat',        color:'#e08a3f'},
+  protection:  {label:'Protection',    color:'#e6dcc0'},
+  timing:      {label:'Timing',        color:'#7f8fd0'}
+};
+const NODES = [
+  ['PIOCHE','Pioche','cartes'],
+  ['IMPULSE','Filtrage / impulsion','cartes'],
+  ['TUTEUR','Tuteur','cartes'],
+  ['RECURSION','Récursion','cartes'],
+  ['MILL','Meule','cimetiere'],
+  ['DEFAUSSE','Défausse','cimetiere'],
+  ['SACRIFICE','Sacrifice','cimetiere'],
+  ['MORT','Mort de créature','cimetiere'],
+  ['JETON','Jeton de créature','board'],
+  ['MARQUEUR','Marqueur +1/+1','board'],
+  ['COPIE','Copie','board'],
+  ['BLINK','Blink','board'],
+  ['ETB','Arrivée en jeu','board'],
+  ['TERRAIN','Terrain (landfall)','mana'],
+  ['RAMP','Ramp','mana'],
+  ['TRESOR','Trésor','mana'],
+  ['MANA','Mana','mana'],
+  ['UNTAP','Dégagement','mana'],
+  ['REDUCTION','Réduction de coût','mana'],
+  ['LANCEMENT','Lancement de sort','sorts'],
+  ['CONTRESORT','Contresort','sorts'],
+  ['DESTRUCTION','Destruction','interaction'],
+  ['EXIL','Exil','interaction'],
+  ['BOUNCE','Renvoi en main','interaction'],
+  ['DEGATS','Dégâts','interaction'],
+  ['ENGAGEMENT','Engagement','stax'],
+  ['STAX','Stax','stax'],
+  ['TAXE','Taxe','stax'],
+  ['PERTE_VIE','Perte de vie','vie'],
+  ['GAIN_VIE','Gain de vie','vie'],
+  ['ATTAQUE','Attaque','combat'],
+  ['BOOST','Boost temporaire','combat'],
+  ['VOL','Vol','combat'],
+  ['PIETINEMENT','Piétinement','combat'],
+  ['MENACE','Menace','combat'],
+  ['IMBLOCABLE','Imblocable','combat'],
+  ['CELERITE','Célérité','combat'],
+  ['INDESTRUCTIBLE','Indestructible','protection'],
+  ['LINCEUL','Linceul','protection'],
+  ['PROTECTION','Protection / ward','protection'],
+  ['ENTRETIEN','Entretien','timing'],
+  ['FIN_TOUR','Fin du tour','timing'],
+  ['STATIQUE','Effet continu','timing']
+];
+const NODE = {}; NODES.forEach((n,i)=>NODE[n[0]]={id:n[0],label:n[1],group:n[2],idx:i});
+
+/* arcs "règles du jeu" : ce qu'un effet permet mécaniquement d'enchaîner */
+const IMPLICIT = [
+  ['JETON','ETB'],['COPIE','ETB'],['BLINK','ETB'],['RECURSION','ETB'],['LANCEMENT','ETB'],
+  ['UNTAP','ENGAGEMENT'],['TRESOR','MANA'],['RAMP','MANA'],['TERRAIN','RAMP'],['MANA','LANCEMENT'],
+  ['SACRIFICE','MORT'],['DESTRUCTION','MORT'],['MILL','RECURSION'],['DEFAUSSE','RECURSION'],
+  ['MARQUEUR','BOOST'],['REDUCTION','LANCEMENT'],['RECURSION','LANCEMENT'],['ETB','SACRIFICE']
+];
+
+/* ---- règles d'extraction : effets produits ---- */
+const EFFECT_RULES = [
+  ['BLINK',      /exile (?:it|them|this creature|another target|up to one other target|target)[^.]{0,70}?(?:,\s*then|\s+and then|\s*,\s*)\s*return[^.]{0,60}battlefield/],
+  ['BLINK',      /exile [^.]{0,60}you control[^.]{0,60}return (?:it|those cards|that card)[^.]{0,50}battlefield/],
+  ['RECURSION',  /return[^.]{0,70}(?:card|cards)[^.]{0,30}from (?:a|your|target player's|their) graveyard/],
+  ['RECURSION',  /(?:cast|play)[^.]{0,40}from (?:your|a) graveyard|gains? flashback|has escape/],
+  ['RECURSION',  /return enchanted creature card/],
+  ['RECURSION',  /return (?:that|it|those) cards? to the battlefield/],
+  ['COPIE',      /triggers an additional time/],
+  ['RAMP',       /search your library for[^.]{0,60}land[^.]{0,60}onto the battlefield/],
+  ['RAMP',       /put a land card from your hand onto the battlefield/],
+  ['TUTEUR',     /search your library for/],
+  ['PIOCHE',     /draws? (?:a card|two cards|three cards|\w+ additional cards|two additional cards|cards)/],
+  ['IMPULSE',    /\bscry\b|\bsurveil\b|look at the top|exile the top card[^.]{0,60}(?:put that card into your hand|you may play)/],
+  ['IMPULSE',    /play (?:lands and )?(?:cast )?spells from the top of your library|may play them this turn/],
+  ['MILL',       /\bmills?\b|puts? the top[^.]{0,40}into (?:their|his or her) graveyard/],
+  ['DEFAUSSE',   /discards?/],
+  ['SACRIFICE',  /sacrifices?/],
+  ['TRESOR',     /treasure token/],
+  ['JETON',      /creates? [^.]{0,60}creature token/],
+  ['JETON',      /creates? (?:a|an|x|one|two|three|six|\d+)[^.]{0,40}token/],
+  ['MARQUEUR',   /\+1\/\+1 counter|\bproliferate\b/],
+  ['COPIE',      /token that's a copy|copy (?:that|target) (?:ability|spell)|copies of/],
+  ['MANA',       /add \{|adds an additional|add one mana|adds? (?:one|two|three) mana/],
+  ['UNTAP',      /untaps?\b/],
+  ['TERRAIN',    /play an additional land/],
+  ['REDUCTION',  /costs? \{?\w?\}? less to cast/],
+  ['CONTRESORT', /counter target/],
+  ['DESTRUCTION',/destroys?\b/],
+  ['EXIL',       /exiles?\b/],
+  ['BOUNCE',     /return target[^.]{0,60}to (?:its owner's|their owner's|your) hand|shuffles it into their library/],
+  ['DEGATS',     /deals? \d+ damage|deals damage equal|deals \w+ damage/],
+  ['PERTE_VIE',  /(?:each opponent|target player|that player|opponents) loses? \d+ life|loses? \d+ life/],
+  ['GAIN_VIE',   /gains? (?:\d+|life equal|4 life) life|you gain \d+ life|\blifelink\b|gains life/],
+  ['BOOST',      /gets? [+-][\dx]+\/[+-][\dx]+|get \+[\dx]+\/\+[\dx]+/],
+  ['VOL',        /\bflying\b/],
+  ['PIETINEMENT',/\btrample\b/],
+  ['MENACE',     /\bmenace\b|\bintimidate\b/],
+  ['IMBLOCABLE', /can't be blocked/],
+  ['CELERITE',   /\bhaste\b/],
+  ['INDESTRUCTIBLE',/\bindestructible\b/],
+  ['LINCEUL',    /\bhexproof\b|\bshroud\b/],
+  ['PROTECTION', /protection from|\bward\b|can't be the target/],
+  ['ENGAGEMENT', /\btaps? (?:target|all|each|up to)|enter(?:s)? tapped|doesn't untap|tapped and attacking/],
+  ['STAX',       /can't (?:cast|attack|block|activate|be cast)|skip your|skip their|no maximum hand size|can't be regenerated/],
+  ['TAXE',       /costs? \{\d+\} more|unless (?:that player|they) pays?|may pay \{\d+\}|unless that player pays/]
+];
+/* ---- règles d'extraction : déclencheurs ---- */
+const TRIGGER_RULES = [
+  ['ETB',      /enter(?:s|ing)\b/],
+  ['MORT',     /dies|is put into a graveyard from the battlefield|leaves the battlefield/],
+  ['ATTAQUE',  /attacks/],
+  ['LANCEMENT',/casts?\b|you cast/],
+  ['PIOCHE',   /draws? a card/],
+  ['DEFAUSSE', /discards?/],
+  ['SACRIFICE',/sacrifices?|exploits/],
+  ['TERRAIN',  /land you control enters|land enters/],
+  ['GAIN_VIE', /gains? life/],
+  ['MARQUEUR', /counters? (?:is|are) put/],
+  ['ENTRETIEN',/upkeep|draw step/],
+  ['FIN_TOUR', /end step|end of turn/],
+  ['DEGATS',   /deals damage|deals combat damage/],
+  ['MANA',     /tapped for mana/],
+  ['ENGAGEMENT',/activate an ability|becomes tapped/],
+  ['TRESOR',   /treasure/]
+];
+
+/* =====================================================================
+   3. ANALYSE DES CARTES
+   ===================================================================== */
+function parseCost(cost){
+  if(!cost || cost==='—') return {symbols:[],cmc:0,colors:new Set()};
+  const symbols = cost.match(/\{[^}]+\}/g)||[];
+  let cmc=0; const colors=new Set();
+  symbols.forEach(s=>{
+    const inner=s.slice(1,-1);
+    if(/^\d+$/.test(inner)) cmc+=parseInt(inner,10);
+    else if(inner==='X') cmc+=0;
+    else cmc+=1;
+    inner.split('/').forEach(p=>{ if('WUBRG'.includes(p)) colors.add(p); });
+  });
+  return {symbols,cmc,colors};
+}
+function stripReminder(t){ return t.replace(/\([^)]*\)/g,' '); }
+
+function splitAbilities(text){
+  return text.split(' // ').map(s=>s.trim()).filter(Boolean);
+}
+function matchAll(rules, s){
+  const out=[];
+  for(const [c,re] of rules){ if(re.test(s) && !out.includes(c)) out.push(c); }
+  return out;
+}
+function refineTriggers(list,clause){
+  let out=[...list];
+  if(out.includes('TERRAIN')) out=out.filter(c=>c!=='ETB');
+  if(/dies|graveyard from the battlefield/.test(clause)) out=out.filter(c=>c!=='ETB');
+  return out;
+}
+function scopeOf(s){
+  if(/an opponent|each opponent|opponents|target player|your opponents|that player/.test(s)) return 'adv';
+  return 'self';
+}
+/* nettoyage : évite qu'un coût "exile trois cartes" compte comme un effet d'exil, etc. */
+function refineEffects(list, clause){
+  let out=[...list];
+  if(out.includes('BLINK')) out=out.filter(c=>c!=='EXIL'&&c!=='BOUNCE'&&c!=='RECURSION');
+  if(/(?:doesn't|don't|can't) untap/.test(clause)) out=out.filter(c=>c!=='UNTAP');
+  if(out.includes('RECURSION')&&/graveyard/.test(clause)) out=out.filter(c=>c!=='BOUNCE');
+  if(/you may pay \{/.test(clause)&&!/unless|costs? \{\d+\} more/.test(clause)) out=out.filter(c=>c!=='TAXE');
+  if(out.includes('RAMP')) out=out.filter(c=>c!=='TUTEUR'||/for a card|for a creature|for an instant|for an artifact/.test(clause));
+  if(out.includes('TRESOR')) out=out.filter(c=>c!=='JETON'||/creature token/.test(clause));
+  if(/enters the battlefield tapped|enter tapped/.test(clause)===false && out.includes('ENGAGEMENT') && !/tap/.test(clause)) out=out.filter(c=>c!=='ENGAGEMENT');
+  return out;
+}
+
+function analyze(card){
+  const text = stripReminder(card.text||'').toLowerCase();
+  const selfNames=[card.name.toLowerCase(),card.name.toLowerCase().split(',')[0].trim()];
+  const isSpell = /instant|sorcery/.test(card.type.toLowerCase());
+  const isPermanent = !isSpell && !/^basic land|^land/.test(card.type.toLowerCase().trim());
+  const abilities=[];
+
+  splitAbilities(text).forEach(raw=>{
+    // découpage en phrases pour repérer les capacités imbriquées (« ... a "quand elle attaque, piochez" »)
+    const chunks = raw.split(/(?<=\.)\s+/).map(s=>s.trim()).filter(Boolean);
+    let ctx=null; // la phrase suivante prolonge la capacité précédente
+    chunks.forEach(chunk=>{
+      const inner = chunk.match(/"([^"]+)"/);
+      const bodies = inner ? [chunk.replace(/"[^"]+"/,' '), inner[1]] : [chunk];
+      bodies.forEach((body,bi)=>{
+        if(!body || body.length<3) return;
+        const granted = inner && bi===1;
+        const trig = body.match(/^(whenever|when|at the beginning of|as long as)\b/);
+        if(trig){
+          const i = body.indexOf(',');
+          const tPart = i>0 ? body.slice(0,i) : body;
+          const ePart = i>0 ? body.slice(i+1) : '';
+          const src = refineTriggers(matchAll(TRIGGER_RULES,tPart),tPart);
+          const eff = refineEffects(matchAll(EFFECT_RULES,ePart),ePart);
+          // « quand ~ arrive en jeu » ne concerne que la carte elle-même ;
+          // « à chaque fois qu'une créature arrive en jeu » est un point d'accroche pour les autres cartes
+          const recurring=/^(whenever|at the beginning of)/.test(body);
+          // « X ou une autre créature meurt » reste un point d'accroche, contrairement à « quand X meurt »
+          const selfRef=(selfNames.some(n=>n&&tPart.includes(n))||/this creature|this permanent|this spell/.test(tPart))
+                        && !/\banother\b|\bother\b/.test(tPart);
+          ctx={from:src.length?src:['STATIQUE'],scope:scopeOf(tPart),kind:granted?'octroyee':'declenchee',
+               hook:recurring&&(granted||!selfRef)};
+          if(src.length||eff.length)
+            abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:ctx.scope,scopeEff:scopeOf(ePart),text:body,hook:ctx.hook});
+          return;
+        }
+        const act = body.match(/^([^:]{1,70}):\s*(.+)$/);
+        if(act && !/^[a-z ]*enchant /.test(body)){
+          const cost=act[1], eff0=act[2];
+          const src=[];
+          if(/\{t\}/.test(cost)) src.push('ENGAGEMENT');
+          if(/sacrifice/.test(cost)) src.push('SACRIFICE');
+          if(/discard/.test(cost)) src.push('DEFAUSSE');
+          if(/pay \d+ life|\d+ life/.test(cost)) src.push('PERTE_VIE');
+          if(/\{\d|\{[wubrgcx]/.test(cost)) src.push('MANA');
+          if(!src.length) src.push('STATIQUE');
+          const eff = refineEffects(matchAll(EFFECT_RULES,eff0),eff0);
+          const sacOutlet=/sacrifice (?:a|an|another|two|three|x|\d)\b/.test(cost)
+                          && !selfNames.some(n=>n&&cost.includes(n));
+          const selfSac=/sacrifice/.test(cost)&&!sacOutlet;
+          ctx={from:src,scope:'self',kind:'activee',hook:false};
+          if(eff.length) abilities.push({kind:'activee',from:src,to:eff,scopeTrig:'self',scopeEff:scopeOf(eff0),text:body,sacOutlet,selfSac});
+          return;
+        }
+        const eff = refineEffects(matchAll(EFFECT_RULES,body),body);
+        if(!eff.length) return;
+        if(ctx && !/^[a-z ,]*(each|all|creatures you control|equipped|enchanted)/.test(body)){
+          abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:ctx.scope,scopeEff:scopeOf(body),text:body,hook:ctx.hook});
+          return;
+        }
+        ctx={from:[isSpell?'LANCEMENT':'STATIQUE'],scope:'self',kind:isSpell?'sort':'statique',hook:false};
+        abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:'self',scopeEff:scopeOf(body),text:body,hook:false});
+      });
+    });
+  });
+
+  const edges=[];
+  abilities.forEach(a=>a.from.forEach(f=>a.to.forEach(t=>{
+    if(f===t) return;
+    edges.push({from:f,to:t,kind:a.kind,scope:a.scopeTrig,text:a.text});
+  })));
+
+  const triggers = new Set(), produces = new Set();
+  abilities.forEach(a=>{
+    const hooks = a.hook
+      ? a.from
+      : a.from.filter(f=>a.kind==='activee'&&((f==='SACRIFICE'&&a.sacOutlet)||f==='DEFAUSSE'));
+    hooks.forEach(f=>{ if(f!=='STATIQUE'&&f!=='MANA') triggers.add(f+'|'+a.scopeTrig); });
+    a.to.forEach(t=>produces.add(t+'|'+a.scopeEff));
+    // un exutoire à sacrifice fait mourir des créatures : c'est aussi une production d'évènement
+    if(a.kind==='activee'&&a.sacOutlet){ produces.add('SACRIFICE|self'); produces.add('MORT|self'); }
+    if(a.kind==='activee'&&a.selfSac&&/creature/i.test(card.type)) produces.add('MORT|self');
+    if(a.kind==='activee'&&a.from.includes('DEFAUSSE')) produces.add('DEFAUSSE|self');
+  });
+  if(isPermanent) produces.add('ETB|self');
+  return {abilities,edges,triggers,produces,isSpell,isPermanent};
+}
+
+/* catégories de deck */
+function categories(card){
+  const c=new Set(), a=card.an, t=card.type.toLowerCase(), tx=(card.text||'').toLowerCase();
+  const has=id=>a.abilities.some(x=>x.to.includes(id));
+  if(/creature/.test(t)) c.add('creatures');
+  if(/land/.test(t)) c.add('terrains');
+  if(has('MANA')||has('RAMP')||has('TRESOR')||has('REDUCTION')) if(!/^basic land/.test(t)) c.add('ramp');
+  if(has('PIOCHE')||has('IMPULSE')||has('RECURSION')) c.add('pioche');
+  if(has('TUTEUR')) c.add('tuteurs');
+  if(has('DESTRUCTION')||has('EXIL')||has('BOUNCE')||has('DEGATS')||has('CONTRESORT')) c.add('removal');
+  if(/all creatures|each creature|each opponent/.test(tx) && (has('DESTRUCTION')||has('DEGATS'))) c.add('wipe');
+  if(has('INDESTRUCTIBLE')||has('LINCEUL')||has('PROTECTION')) c.add('protection');
+  if(has('JETON')) c.add('jetons');
+  if(has('MARQUEUR')) c.add('marqueurs');
+  if(has('SACRIFICE')||a.abilities.some(x=>x.from.includes('SACRIFICE')||x.from.includes('MORT'))) c.add('sacrifice');
+  if(has('BLINK')||a.abilities.some(x=>x.from.includes('ETB'))) c.add('blink');
+  if(has('STAX')||has('TAXE')) c.add('stax');
+  return c;
+}
+
+const CATLABEL={creatures:'Créatures',terrains:'Terrains',ramp:'Ramp / mana',pioche:'Card advantage',
+  tuteurs:'Tuteurs',removal:'Removal',wipe:'Board wipes',protection:'Protection',jetons:'Jetons',
+  marqueurs:'Marqueurs',sacrifice:'Sacrifice',blink:'ETB / blink',stax:'Stax'};
+
+/* =====================================================================
+   4. CONSTRUCTION DE LA BASE
+   ===================================================================== */
+const DB=[]; const BY_NAME={}; const LOOSE={}; const FRONT={};
+function norm(s){ return String(s).toLowerCase().replace(/[\u2018\u2019`]/g,"'").replace(/\s+/g,' ').trim(); }
+function loose(s){ return norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,''); }
+function buildCard(name,cost,type,price,text){
+  const pc=parseCost(cost);
+  const card={name,cost:cost==='—'?'':cost,type:type||'Inconnu',price:parseFloat(price)||0,text:text||'',
+    cmc:pc.cmc,symbols:pc.symbols,colors:[...pc.colors]};
+  // identité couleur : coût + symboles dans le texte
+  const idc=new Set(card.colors);
+  (card.text.match(/\{[^}]+\}/g)||[]).forEach(x=>x.slice(1,-1).split('/').forEach(pp=>{if('WUBRG'.includes(pp))idc.add(pp)}));
+  if(/^basic land/i.test(card.type)) idc.clear();
+  card.identity=[...idc];
+  card.an=analyze(card);
+  card.cats=categories(card);
+  const tf=String(card.type).split(' // ')[0];
+  card.isCreature=/creature/i.test(tf);
+  card.isLand=/land/i.test(tf);
+  card.isLegendaryCreature=/legendary creature/i.test(tf);
+  return card;
+}
+function indexCard(card){
+  BY_NAME[norm(card.name)]=card; LOOSE[loose(card.name)]=card;
+  // une carte recto-verso est aussi retrouvable par sa seule face avant
+  if(card.name.includes(' // ')){
+    const f=loose(card.name.split(' // ')[0]);
+    if(f&&!FRONT[f]) FRONT[f]=card;
+  }
+}
+function unindexCard(card){
+  delete BY_NAME[norm(card.name)]; delete LOOSE[loose(card.name)];
+  if(card.name.includes(' // ')){
+    const f=loose(card.name.split(' // ')[0]);
+    if(FRONT[f]===card) delete FRONT[f];
+  }
+}
+function registerCard(card){
+  const k=norm(card.name);
+  if(BY_NAME[k]) return BY_NAME[k];
+  DB.push(card); indexCard(card);
+  return card;
+}
+function find(name){
+  if(!name) return null;
+  const n=norm(name);
+  const avant=n.split(' // ')[0].trim();
+  return BY_NAME[n] || BY_NAME[avant] || LOOSE[loose(n)] || LOOSE[loose(avant)]
+      || FRONT[loose(n)] || FRONT[loose(avant)] || null;
+}
+RAW.split('\n').forEach(line=>{
+  const [name,cost,type,price,text]=line.split('|');
+  if(!name) return;
+  registerCard(buildCard(name,cost,type,price,text));
+});
+
+/* type principal pour les regroupements */
+function mainType(c){
+  const t=c.type.toLowerCase().split(' // ')[0];
+  if(t.includes('land')) return 'Terrain';
+  if(t.includes('creature')) return 'Créature';
+  if(t.includes('instant')) return 'Éphémère';
+  if(t.includes('sorcery')) return 'Rituel';
+  if(t.includes('artifact')) return 'Artefact';
+  if(t.includes('enchantment')) return 'Enchantement';
+  if(t.includes('planeswalker')) return 'Planeswalker';
+  return 'Autre';
+}
+const TYPE_ORDER=['Créature','Éphémère','Rituel','Artefact','Enchantement','Planeswalker','Terrain','Autre'];
+
+/* =====================================================================
+   5. ÉTAT
+   ===================================================================== */
+const FORMATS={
+  edh:{label:'Commander (EDH)',size:100,commander:true,maxCopies:1,lands:36},
+  standard:{label:'Standard',size:60,commander:false,maxCopies:4,lands:24},
+  limite:{label:'Limité',size:40,commander:false,maxCopies:99,lands:17},
+  perso:{label:'Personnalisé',size:100,commander:false,maxCopies:1,lands:36}
+};
+const S={
+  collection:new Map(),   // nom -> quantité
+  deck:new Map(),         // nom -> quantité
+  bought:new Map(),       // nom -> {qty, price, offer}
+  commander:null,
+  colors:new Set(['W','U','B','R','G','C']),
+  colorMode:'identity',   // identity | atleast | exact
+  format:'edh',
+  custom:{size:100,commander:true,maxCopies:1,colorLimits:{}},
+  search:'', typeFilter:'', sort:'cmc', view:'grid',
+  graphSource:'collection', showImplicit:true, focusNode:null,
+  budget:{total:30,perCard:12,condition:'GD',lang:'any',sellerType:'any',country:'any'},
+  selected:null, selectedCtx:'collection', limitB:200, enriching:false, images:true, imagesFailed:false
+};
+'WUBRG'.split('').forEach(c=>S.custom.colorLimits[c]={min:0,max:99});
+
+/* collection de départ, pour que l'atelier soit utilisable tout de suite */
+DB.forEach(c=>{
+  let q = c.price>20?1:(c.price>6?2:3);
+  if(/^basic land/i.test(c.type)) q=12;
+  S.collection.set(c.name,q);
+});
+
+function fmt(){ const f=FORMATS[S.format]; return S.format==='perso'
+  ? {label:'Personnalisé',size:S.custom.size,commander:S.custom.commander,maxCopies:S.custom.maxCopies,lands:Math.round(S.custom.size*0.36)}
+  : f; }
+function eur(n){ return (Math.round(n*100)/100).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* =====================================================================
+   6. FILTRAGE
+   ===================================================================== */
+function colorOK(card){
+  const id=card.identity;
+  const sel=S.colors;
+  if(id.length===0) return sel.has('C');
+  if(S.colorMode==='identity') return id.every(c=>sel.has(c));
+  if(S.colorMode==='atleast') return id.some(c=>sel.has(c));
+  return id.length===[...sel].filter(c=>c!=='C').length && id.every(c=>sel.has(c));
+}
+function collectionCards(){
+  const out=[];
+  S.collection.forEach((q,n)=>{ const c=find(n); if(c&&q>0) out.push({card:c,qty:q}); });
+  return out;
+}
+function filtered(){
+  let list=collectionCards().filter(e=>colorOK(e.card));
+  if(S.search){ const s=S.search.toLowerCase();
+    list=list.filter(e=>e.card.name.toLowerCase().includes(s)||e.card.text.toLowerCase().includes(s)||e.card.type.toLowerCase().includes(s)); }
+  if(S.typeFilter) list=list.filter(e=>mainType(e.card)===S.typeFilter);
+  const f=fmt();
+  list.forEach(e=>e.usable=Math.min(e.qty,f.maxCopies));
+  const cmp={
+    cmc:(a,b)=>a.card.cmc-b.card.cmc||a.card.name.localeCompare(b.card.name),
+    price:(a,b)=>b.card.price-a.card.price,
+    alpha:(a,b)=>a.card.name.localeCompare(b.card.name),
+    type:(a,b)=>TYPE_ORDER.indexOf(mainType(a.card))-TYPE_ORDER.indexOf(mainType(b.card))||a.card.cmc-b.card.cmc,
+    qty:(a,b)=>b.qty-a.qty
+  }[S.sort];
+  return list.sort(cmp);
+}
+function deckEntries(){
+  const out=[];
+  S.deck.forEach((q,n)=>{ const c=find(n); if(c&&q>0) out.push({card:c,qty:q}); });
+  return out.sort((a,b)=>TYPE_ORDER.indexOf(mainType(a.card))-TYPE_ORDER.indexOf(mainType(b.card))||a.card.cmc-b.card.cmc||a.card.name.localeCompare(b.card.name));
+}
+function deckSize(){ let n=0; S.deck.forEach(q=>n+=q); return n; }
+function availableFor(card){ // exemplaires encore disponibles dans la collection
+  const owned=S.collection.get(card.name)||0;
+  const bought=(S.bought.get(card.name)||{qty:0}).qty;
+  return owned+bought-(S.deck.get(card.name)||0);
+}
+
+/* =====================================================================
+   7. RENDU — pastilles, tuiles
+   ===================================================================== */
+function manaHTML(card,sm){
+  const cls=sm?' sm':'';
+  if(!card.symbols.length) return `<span class="mana gen${cls}">—</span>`;
+  return card.symbols.map(s=>{
+    const i=s.slice(1,-1);
+    const col='WUBRGC'.includes(i)?i:(/^\d+$|^X$/.test(i)?'gen':(i.split('/').find(p=>'WUBRG'.includes(p))||'gen'));
+    return `<span class="mana ${col}${cls}">${esc(/^\d+$|^X$/.test(i)?i:(col==='gen'?i:col))}</span>`;
+  }).join('');
+}
+function stripeColor(card){
+  const id=card.identity;
+  if(!id.length) return 'var(--C)';
+  if(id.length===1) return `var(--${id[0]})`;
+  return `linear-gradient(180deg,${id.map(c=>`var(--${c})`).join(',')})`;
+}
+function cardTile(e,ctx){
+  const c=e.card, sel=S.selected===c.name&&S.selectedCtx===ctx;
+  const tags=[...c.cats].filter(x=>x!=='creatures'&&x!=='terrains').slice(0,3);
+  const withImg=S.images&&c.img;
+  return `<div class="cardT ${withImg?'withimg':''} ${sel?'sel':''}" data-card="${esc(c.name)}" data-ctx="${ctx}">
+    ${withImg?'':`<span class="stripe" style="background:${stripeColor(c)}"></span>`}
+    ${withImg
+      ? `<div class="imgwrap"><img class="cimg" src="${esc(c.img)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.remove()">
+           ${c.cmc?`<span class="badge">CMC ${c.cmc}</span>`:''}</div>
+         <div class="cname">${esc(c.name)}</div>`
+      : `<div style="display:flex;gap:4px;align-items:flex-start">
+          <div class="cname">${esc(c.name)}</div>
+          <div class="costs" style="margin-left:auto">${manaHTML(c,true)}</div>
+        </div>
+        <div class="ctype">${esc(mainType(c))}${c.cmc?` · CMC ${c.cmc}`:''}</div>
+        <div class="tags">${c.unknown?'<span class="tag" style="border-color:var(--brass);color:var(--brass)">à compléter</span>':''}${tags.map(t=>`<span class="tag">${CATLABEL[t]||t}</span>`).join('')}</div>`}
+    <div class="foot">
+      <span>${eur(c.price)}</span>
+      ${ctx==='collection'
+        ? `<span class="qty">
+             <button class="btn sm" data-act="dec" data-name="${esc(c.name)}" aria-label="Retirer un exemplaire">−</button>
+             <b>${e.qty}</b>
+             <button class="btn sm" data-act="inc" data-name="${esc(c.name)}" aria-label="Ajouter un exemplaire">+</button>
+             <button class="btn sm" data-act="toDeck" data-name="${esc(c.name)}" title="Ajouter au deck">▲</button>
+           </span>`
+        : `<span class="qty"><b>×${e.qty}</b>
+             <button class="btn sm" data-act="fromDeck" data-name="${esc(c.name)}" title="Retirer du deck">▼</button></span>`}
+    </div>
+  </div>`;
+}
+function cardRow(e,ctx){
+  const c=e.card;
+  return `<div class="lrow" data-card="${esc(c.name)}" data-ctx="${ctx}">
+    <span class="dot" style="background:${stripeColor(c)}"></span>
+    <span class="cname">${esc(c.name)}</span>
+    <span class="costs">${manaHTML(c,true)}</span>
+    <span class="mono small muted">${c.unknown?'à compléter':esc(mainType(c))}</span>
+    <span class="mono small">${eur(c.price)}</span>
+    ${ctx==='collection'
+      ? `<span class="qty"><button class="btn sm" data-act="dec" data-name="${esc(c.name)}">−</button><b>${e.qty}</b><button class="btn sm" data-act="inc" data-name="${esc(c.name)}">+</button><button class="btn sm" data-act="toDeck" data-name="${esc(c.name)}">▲</button></span>`
+      : `<span class="qty"><b>×${e.qty}</b><button class="btn sm" data-act="fromDeck" data-name="${esc(c.name)}">▼</button></span>`}
+  </div>`;
+}
+
+/* =====================================================================
+   8. SECTION A — filtres & format
+   ===================================================================== */
+function renderA(){
+  const f=fmt();
+  const cols=['W','U','B','R','G','C'];
+  const custom=S.format==='perso'?`
+    <div class="group" style="margin-top:10px">
+      <h4>Paramètres personnalisés</h4>
+      <div class="row">
+        <div class="field"><label class="lab" for="cSize">Cartes</label><input id="cSize" type="number" min="1" max="250" value="${S.custom.size}" data-cust="size" style="width:88px"></div>
+        <div class="field"><label class="lab" for="cCop">Copies max</label><input id="cCop" type="number" min="1" max="99" value="${S.custom.maxCopies}" data-cust="maxCopies" style="width:88px"></div>
+        <div class="field"><label class="lab" for="cCmd">Commandant</label>
+          <select id="cCmd" data-cust="commander"><option value="1" ${S.custom.commander?'selected':''}>Oui</option><option value="0" ${!S.custom.commander?'selected':''}>Non</option></select></div>
+      </div>
+      <div class="scroll" style="margin-top:8px"><table class="tbl"><thead><tr><th>Couleur</th><th>Min</th><th>Max</th></tr></thead><tbody>
+      ${'WUBRG'.split('').filter(c=>S.colors.has(c)).map(c=>`<tr>
+        <td><span class="mana sm ${c}">${c}</span></td>
+        <td><input id="lim-${c}-min" type="number" min="0" max="250" value="${S.custom.colorLimits[c].min}" data-lim="${c}" data-side="min" style="width:70px"></td>
+        <td><input id="lim-${c}-max" type="number" min="0" max="250" value="${S.custom.colorLimits[c].max}" data-lim="${c}" data-side="max" style="width:70px"></td></tr>`).join('')||'<tr><td colspan="3" class="muted small">Sélectionnez au moins une couleur.</td></tr>'}
+      </tbody></table></div>
+      <div class="small muted" style="margin-top:6px">Utile pour un cube : fixez la taille, 1 copie max et un quota par couleur.</div>
+    </div>`:'';
+  document.getElementById('bodyA').innerHTML=`
+    <div class="row" style="gap:14px">
+      <div class="field">
+        <label class="lab">Couleurs</label>
+        <div class="row" style="gap:2px">
+          ${cols.map(c=>`<button class="mana-btn" data-color="${c}" aria-pressed="${S.colors.has(c)}" aria-label="Couleur ${c}"><span class="mana ${c}">${c}</span></button>`).join('')}
+          <button class="btn sm" data-act="allColors" style="margin-left:6px">Tout</button>
+          <button class="btn sm" data-act="noColors">Aucune</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="lab">Règle de couleur</label>
+        <div class="seg">
+          ${[['identity','Identité incluse'],['atleast','Au moins une'],['exact','Exactement']].map(([k,l])=>
+            `<button data-cmode="${k}" aria-pressed="${S.colorMode===k}">${l}</button>`).join('')}
+        </div>
+      </div>
+      <div class="field">
+        <label class="lab" for="fmtSel">Format</label>
+        <select id="fmtSel" data-act="format">
+          ${Object.entries(FORMATS).map(([k,v])=>`<option value="${k}" ${S.format===k?'selected':''}>${v.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label class="lab">Contraintes actives</label>
+        <div class="chips">
+          <span class="chip on">${f.size} cartes</span>
+          <span class="chip">${f.maxCopies>=99?'copies illimitées':f.maxCopies+' copie'+(f.maxCopies>1?'s':'')+' max'}</span>
+          <span class="chip">${f.commander?'avec commandant':'sans commandant'}</span>
+          <span class="chip">~${f.lands} terrains</span>
+        </div>
+      </div>
+    </div>${custom}`;
+  document.getElementById('hintA').textContent=`${[...S.colors].join('')} · ${f.label}`;
+}
+
+/* =====================================================================
+   9. SECTION B — collection
+   ===================================================================== */
+function renderB(){
+  const list=filtered();
+  const total=collectionCards().reduce((n,e)=>n+e.qty,0);
+  const shown=list.reduce((n,e)=>n+e.qty,0);
+  const unk=collectionCards().filter(e=>e.card.unknown).length;
+  const page=list.slice(0,S.limitB);
+  const rest=list.length-page.length;
+  document.getElementById('bodyB').innerHTML=`
+    <div class="row" style="margin-bottom:10px">
+      <input type="text" id="q" placeholder="Rechercher un nom, un type, un texte…" value="${esc(S.search)}" style="flex:1;min-width:180px">
+      <select data-act="typeFilter">
+        <option value="">Tous les types</option>
+        ${TYPE_ORDER.map(t=>`<option value="${t}" ${S.typeFilter===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+      <select data-act="sort">
+        ${[['cmc','Tri : coût de mana'],['price','Tri : prix'],['alpha','Tri : alphabétique'],['type','Tri : type'],['qty','Tri : quantité']]
+          .map(([k,l])=>`<option value="${k}" ${S.sort===k?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <div class="seg">
+        <button data-view="grid" aria-pressed="${S.view==='grid'}">Grille</button>
+        <button data-view="list" aria-pressed="${S.view==='list'}">Liste</button>
+      </div>
+      <button class="btn" data-act="toggleImages" aria-pressed="${S.images}" title="Afficher les visuels des cartes">Visuels</button>
+      <button class="btn" data-act="addCard">Ajouter</button>
+      <button class="btn" data-act="import">Importer MTGO</button>
+      ${unk?`<button class="btn" data-act="enrich">Compléter ${unk} carte${unk>1?'s':''}</button>`:''}
+      <button class="btn danger" data-act="wipe">Vider</button>
+    </div>
+    <div class="small muted" style="margin-bottom:8px">${list.length} cartes différentes après filtrage · ${shown} exemplaires sur ${total} dans la collection${rest>0?` · ${page.length} affichées`:''}</div>
+    ${unk?`<div class="warnbox">${unk} carte${unk>1?'s ont':' a'} été importée${unk>1?'s':''} sans coût de mana ni texte : leur couleur, leur courbe et leurs capacités restent inconnues tant qu'elles ne sont pas complétées.</div>`:''}
+    ${page.length?(S.view==='grid'
+      ? `<div class="grid">${page.map(e=>cardTile(e,'collection')).join('')}</div>`
+      : `<div class="list">${page.map(e=>cardRow(e,'collection')).join('')}</div>`)
+      : `<div class="empty">Aucune carte ne passe les filtres. Élargissez les couleurs en section A ou effacez la recherche.</div>`}
+    ${rest>0?`<div style="text-align:center;margin-top:10px"><button class="btn" data-act="moreB">Afficher ${Math.min(PAGE,rest)} cartes de plus (${rest} restantes)</button></div>`:''}
+    ${S.selectedCtx==='collection'&&S.selected?detailPanel(find(S.selected),'collection'):''}`;
+  document.getElementById('hintB').textContent=`${shown}/${total} ex.`;
+  if(S.view==='grid') setTimeout(()=>queueImages(page.map(e=>e.card)),0);
+}
+
+/* =====================================================================
+   10. SECTION C — statistiques
+   ===================================================================== */
+function statsOf(list){
+  const st={ex:0,diff:list.length,byColor:{W:0,U:0,B:0,R:0,G:0,C:0},byType:{},matrix:{},cmc:{},value:0};
+  TYPE_ORDER.forEach(t=>{st.byType[t]=0;st.matrix[t]={W:0,U:0,B:0,R:0,G:0,C:0}});
+  list.forEach(e=>{
+    const c=e.card,q=e.qty,t=mainType(c);
+    st.ex+=q; st.value+=q*c.price;
+    st.byType[t]+=q;
+    const ids=c.identity.length?c.identity:['C'];
+    ids.forEach(col=>{st.byColor[col]+=q; st.matrix[t][col]+=q;});
+    const k=Math.min(c.cmc,9);
+    if(!c.isLand){ st.cmc[k]=(st.cmc[k]||0)+q; }
+  });
+  return st;
+}
+function histogram(dataByCmc, colorSplit){
+  const max=Math.max(1,...Object.values(dataByCmc).map(v=>typeof v==='number'?v:Object.values(v).reduce((a,b)=>a+b,0)));
+  const bars=[];
+  for(let i=0;i<=9;i++){
+    const v=dataByCmc[i]||0;
+    const tot=typeof v==='number'?v:Object.values(v).reduce((a,b)=>a+b,0);
+    const h=Math.round(tot/max*118);
+    let segs='';
+    if(colorSplit&&typeof v==='object'){
+      Object.entries(v).forEach(([col,n])=>{ if(n>0) segs+=`<div class="bseg" style="height:${Math.max(2,Math.round(n/max*118))}px;background:var(--${col})"></div>`; });
+    } else segs=`<div class="bseg" style="height:${Math.max(tot?2:0,h)}px;background:linear-gradient(180deg,var(--brass),var(--brass-d))"></div>`;
+    bars.push(`<div class="bar"><div class="n">${tot||''}</div>${segs}</div>`);
+  }
+  return `<div class="bars">${bars.join('')}</div>
+    <div class="blabels">${[0,1,2,3,4,5,6,7,8,'9+'].map(i=>`<div>${i}</div>`).join('')}</div>`;
+}
+function renderC(){
+  const all=statsOf(collectionCards()), fl=statsOf(filtered());
+  const f=fmt();
+  const usable=filtered().reduce((n,e)=>n+Math.min(e.qty,f.maxCopies),0);
+  const cmcSplit={};
+  filtered().forEach(e=>{ if(e.card.isLand) return; const k=Math.min(e.card.cmc,9);
+    cmcSplit[k]=cmcSplit[k]||{W:0,U:0,B:0,R:0,G:0,C:0};
+    (e.card.identity.length?e.card.identity:['C']).forEach(col=>cmcSplit[k][col]+=e.qty/(e.card.identity.length||1));
+  });
+  Object.values(cmcSplit).forEach(o=>Object.keys(o).forEach(k=>o[k]=Math.round(o[k]*10)/10));
+  document.getElementById('bodyC').innerHTML=`
+    <div class="statgrid">
+      <div class="stat"><div class="v">${all.ex}</div><div class="k">Exemplaires (total)</div></div>
+      <div class="stat"><div class="v">${fl.ex}</div><div class="k">Exemplaires filtrés</div></div>
+      <div class="stat"><div class="v">${fl.diff}</div><div class="k">Cartes différentes</div></div>
+      <div class="stat"><div class="v">${usable}</div><div class="k">Jouables (max ${f.maxCopies>=99?'∞':f.maxCopies}/carte)</div></div>
+      <div class="stat"><div class="v">${eur(fl.value)}</div><div class="k">Valeur filtrée</div></div>
+    </div>
+    <h3 style="margin:14px 0 6px;font-size:15px">Répartition par couleur</h3>
+    <div class="statgrid">
+      ${['W','U','B','R','G','C'].map(c=>`<div class="stat"><div class="v" style="color:var(--${c})">${fl.byColor[c]}</div><div class="k"><span class="mana sm ${c}">${c}</span> ${all.byColor[c]} au total</div></div>`).join('')}
+    </div>
+    <h3 style="margin:14px 0 6px;font-size:15px">Types × couleurs (collection filtrée)</h3>
+    <div class="scroll"><table class="tbl">
+      <thead><tr><th>Type</th>${['W','U','B','R','G','C'].map(c=>`<th><span class="mana sm ${c}">${c}</span></th>`).join('')}<th>Total</th><th>Collection</th></tr></thead>
+      <tbody>${TYPE_ORDER.filter(t=>all.byType[t]>0).map(t=>`<tr><td>${t}</td>
+        ${['W','U','B','R','G','C'].map(c=>`<td class="${fl.matrix[t][c]?'':'muted'}">${fl.matrix[t][c]||'·'}</td>`).join('')}
+        <td><b>${fl.byType[t]}</b></td><td class="muted">${all.byType[t]}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <h3 style="margin:14px 0 6px;font-size:15px">Courbe de mana de la collection filtrée</h3>
+    ${histogram(cmcSplit,true)}
+    <div class="small muted" style="margin-top:6px">Terrains exclus. Les cartes multicolores sont réparties entre leurs couleurs.</div>`;
+  document.getElementById('hintC').textContent=`${fl.diff} cartes · ${eur(fl.value)}`;
+}
+
+/* =====================================================================
+   11. SECTION D — graphe des capacités
+   ===================================================================== */
+function graphCards(){
+  if(S.graphSource==='deck') return deckEntries().map(e=>e.card);
+  if(S.graphSource==='suggestions') return currentSuggestions().slice(0,24).map(s=>s.card);
+  if(S.graphSource==='all') return DB;
+  return filtered().map(e=>e.card);
+}
+function buildGraph(cards){
+  const edges=new Map(); // "from>to" -> {from,to,cards:Set,kinds:Set}
+  cards.forEach(c=>c.an.edges.forEach(e=>{
+    const k=e.from+'>'+e.to;
+    if(!edges.has(k)) edges.set(k,{from:e.from,to:e.to,cards:new Map(),kinds:new Set()});
+    const o=edges.get(k); o.kinds.add(e.kind);
+    if(!o.cards.has(c.name)) o.cards.set(c.name,e.text);
+  }));
+  const deg={}; NODES.forEach(n=>deg[n[0]]=0);
+  edges.forEach(e=>{ deg[e.from]+=e.cards.size; deg[e.to]+=e.cards.size; });
+  return {edges,deg};
+}
+function findCycles(edges,implicit){
+  const adj={}; NODES.forEach(n=>adj[n[0]]=[]);
+  edges.forEach(e=>adj[e.from].push({to:e.to,cards:[...e.cards.keys()],real:true}));
+  if(implicit) IMPLICIT.forEach(([a,b])=>adj[a].push({to:b,cards:[],real:false}));
+  const cycles=[]; const seen=new Set(); let budget=150000;
+  const start=Object.keys(adj).filter(n=>adj[n].length);
+  for(const s of start){
+    if(budget<=0) break;
+    const stack=[{node:s,path:[s],used:[]}];
+    while(stack.length&&cycles.length<250&&budget-->0){
+      const cur=stack.pop();
+      for(const e of adj[cur.node]){
+        if(e.to===s&&cur.path.length>=2){
+          const used=[...cur.used,e];
+          const realCards=new Set(); used.forEach(u=>u.cards.forEach(c=>realCards.add(c)));
+          const nReal=used.filter(u=>u.real).length;
+          if(realCards.size>=2&&nReal>=2){
+            const key=[...cur.path].sort().join('|')+'::'+[...realCards].sort().join('|');
+            if(!seen.has(key)){ seen.add(key);
+              cycles.push({path:[...cur.path],cards:[...realCards],implicitCount:used.length-nReal,len:used.length}); }
+          }
+        } else if(!cur.path.includes(e.to)&&cur.path.length<5){
+          stack.push({node:e.to,path:[...cur.path,e.to],used:[...cur.used,e]});
+        }
+      }
+    }
+  }
+  return cycles.sort((a,b)=>a.implicitCount-b.implicitCount||a.len-b.len||b.cards.length-a.cards.length).slice(0,8);
+}
+function svgGraph(g){
+  const R=380,cx=500,cy=500,N=NODES.length;
+  const pos={};
+  NODES.forEach((n,i)=>{ const a=-Math.PI/2+i/N*2*Math.PI; pos[n[0]]={x:cx+R*Math.cos(a),y:cy+R*Math.sin(a),a}; });
+  let arcs='';
+  // secteurs de groupe
+  let gi=0;
+  const groupsSeen={};
+  NODES.forEach((n,i)=>{ (groupsSeen[n[2]]=groupsSeen[n[2]]||[]).push(i); });
+  Object.entries(groupsSeen).forEach(([gname,idxs])=>{
+    const a0=-Math.PI/2+(idxs[0]-0.42)/N*2*Math.PI, a1=-Math.PI/2+(idxs[idxs.length-1]+0.42)/N*2*Math.PI;
+    const r=R+52;
+    const x0=cx+r*Math.cos(a0),y0=cy+r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);
+    const large=(a1-a0)>Math.PI?1:0;
+    arcs+=`<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="${GROUPS[gname].color}" stroke-width="5" opacity=".55" stroke-linecap="round"/>`;
+    gi++;
+  });
+  let paths='',dots='',labels='';
+  let list=[...g.edges.values()];
+  if(list.length>420) list=list.sort((a,b)=>b.cards.size-a.cards.size).slice(0,420);
+  const maxW=Math.max(1,...list.map(e=>e.cards.size));
+  list.forEach(e=>{
+    if(S.focusNode && e.from!==S.focusNode && e.to!==S.focusNode) return;
+    const p=pos[e.from],q=pos[e.to]; if(!p||!q) return;
+    const mx=(p.x+q.x)/2,my=(p.y+q.y)/2;
+    const cxp=cx+(mx-cx)*0.28, cyp=cy+(my-cy)*0.28;
+    const w=1+2.6*e.cards.size/maxW;
+    const col=GROUPS[NODE[e.to].group].color;
+    const names=[...e.cards.keys()];
+    paths+=`<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} Q${cxp.toFixed(1)},${cyp.toFixed(1)} ${q.x.toFixed(1)},${q.y.toFixed(1)}"
+      fill="none" stroke="${col}" stroke-width="${w.toFixed(2)}" opacity="${S.focusNode?0.75:0.42}" marker-end="url(#ah)">
+      <title>${esc(NODE[e.from].label)} → ${esc(NODE[e.to].label)} — ${e.cards.size} carte(s) : ${esc(names.slice(0,6).join(', '))}</title></path>`;
+  });
+  if(S.showImplicit){
+    IMPLICIT.forEach(([a,b])=>{
+      if(S.focusNode && a!==S.focusNode && b!==S.focusNode) return;
+      const p=pos[a],q=pos[b]; const mx=(p.x+q.x)/2,my=(p.y+q.y)/2;
+      paths+=`<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} Q${(cx+(mx-cx)*0.28).toFixed(1)},${(cy+(my-cy)*0.28).toFixed(1)} ${q.x.toFixed(1)},${q.y.toFixed(1)}"
+        fill="none" stroke="#6f6690" stroke-width="1" stroke-dasharray="4 6" opacity=".5"><title>Règle du jeu : ${esc(NODE[a].label)} permet ${esc(NODE[b].label)}</title></path>`;
+    });
+  }
+  NODES.forEach(n=>{
+    const id=n[0],p=pos[id],d=g.deg[id]||0;
+    const r=6+Math.min(16,Math.sqrt(d)*2.6);
+    const col=GROUPS[n[2]].color;
+    const on=S.focusNode===id;
+    dots+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${col}" fill-opacity="${d?0.9:0.25}"
+      stroke="${on?'#fff':'#171322'}" stroke-width="${on?3:1.5}" data-node="${id}" style="cursor:pointer">
+      <title>${esc(n[1])} — ${d} connexion(s)</title></circle>`;
+    const deg2=p.a*180/Math.PI, flip=Math.cos(p.a)<0;
+    const lx=cx+(R+22)*Math.cos(p.a), ly=cy+(R+22)*Math.sin(p.a);
+    labels+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" fill="${d?'#e8e3f2':'#6d6486'}" font-size="15" font-family="ui-sans-serif,system-ui"
+      text-anchor="${flip?'end':'start'}" dominant-baseline="middle"
+      transform="rotate(${flip?deg2+180:deg2},${lx.toFixed(1)},${ly.toFixed(1)})" data-node="${id}" style="cursor:pointer">${esc(n[1])}</text>`;
+  });
+  return `<svg viewBox="0 0 1000 1000" role="img" aria-label="Graphe circulaire des capacités">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9 z" fill="#cfc7e4" opacity=".85"/></marker></defs>
+    ${arcs}${paths}${dots}${labels}</svg>`;
+}
+function renderD(){
+  const cards=graphCards(), g=buildGraph(cards);
+  const cycles=findCycles(g.edges,S.showImplicit);
+  const focusInfo=(()=>{
+    if(!S.focusNode) return '';
+    const inb=[],outb=[];
+    g.edges.forEach(e=>{ if(e.to===S.focusNode) inb.push(e); if(e.from===S.focusNode) outb.push(e); });
+    const fmtList=(arr,dir)=>arr.length?arr.map(e=>`<div class="arc"><b>${esc(NODE[dir==='in'?e.from:e.to].label)}</b> — ${[...e.cards.keys()].slice(0,8).map(esc).join(', ')}</div>`).join(''):'<div class="arc muted">aucun</div>';
+    return `<div class="detail"><h3>${esc(NODE[S.focusNode].label)}</h3>
+      <div class="small muted" style="margin-bottom:6px">Cliquez à nouveau sur le nœud pour désélectionner.</div>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        <div style="flex:1;min-width:220px"><div class="lab" style="margin-bottom:4px">Ce qui déclenche cet effet</div>${fmtList(inb,'in')}</div>
+        <div style="flex:1;min-width:220px"><div class="lab" style="margin-bottom:4px">Ce que cet effet déclenche</div>${fmtList(outb,'out')}</div>
+      </div></div>`;
+  })();
+  document.getElementById('bodyD').innerHTML=`
+    <div class="row" style="margin-bottom:10px">
+      <div class="seg">
+        ${[['collection','Collection filtrée'],['deck','Deck'],['suggestions','Suggestions'],['all','Base complète']].map(([k,l])=>
+          `<button data-gsrc="${k}" aria-pressed="${S.graphSource===k}">${l}</button>`).join('')}
+      </div>
+      <button class="btn" data-act="toggleImplicit" aria-pressed="${S.showImplicit}">Arcs de règles</button>
+      ${S.focusNode?`<button class="btn" data-act="clearFocus">Tout afficher</button>`:''}
+      <span class="small muted">${cards.length} cartes · ${g.edges.size} arcs</span>
+    </div>
+    <div class="graphbox">${svgGraph(g)}</div>
+    <div class="legend">${Object.entries(GROUPS).map(([k,v])=>`<span class="lg"><span class="dot" style="background:${v.color}"></span>${v.label}</span>`).join('')}</div>
+    ${focusInfo}
+    <h3 style="margin:14px 0 6px;font-size:15px">Boucles détectées <span class="small muted">— un cycle signale un moteur ou un combo potentiel</span></h3>
+    ${cycles.length?cycles.map(c=>`<div class="combo">
+      <div class="path">${c.path.map(p=>esc(NODE[p].label)).join(' → ')} → ${esc(NODE[c.path[0]].label)}</div>
+      <div class="small">${c.cards.map(esc).join(' + ')}${c.implicitCount?` <span class="muted">(${c.implicitCount} arc${c.implicitCount>1?'s':''} de règle)</span>`:''}</div>
+    </div>`).join(''):'<div class="empty">Aucune boucle sur ce périmètre. Élargissez la source du graphe ou activez les arcs de règles.</div>'}
+    <div style="margin-top:8px"><button class="btn" data-act="graphToF">Proposer des cartes qui complètent ${S.focusNode?'ce nœud':'ces boucles'}</button></div>
+    <div class="small muted" style="margin-top:8px">Chaque arc va d'un déclencheur vers un effet produit. Une carte peut poser plusieurs arcs. Les arcs pointillés sont les enchaînements permis par les règles (un jeton qui arrive déclenche les effets d'arrivée en jeu, un trésor sacrifié produit du mana…).</div>`;
+  document.getElementById('hintD').textContent=`${g.edges.size} arcs · ${cycles.length} boucles`;
+}
+
+/* =====================================================================
+   12. SYNERGIES & EXPLICATIONS
+   ===================================================================== */
+const EQUIV={RAMP:['TERRAIN'],TERRAIN:['RAMP'],JETON:['ETB'],COPIE:['ETB'],BLINK:['ETB'],
+             RECURSION:['ETB'],TRESOR:['MANA'],MARQUEUR:['BOOST']};
+function feeds(concept){ return [concept,...(EQUIV[concept]||[])]; }
+function synergyBetween(a,b){
+  // ce que a produit et qui déclenche b, et inversement
+  const out=[];
+  a.an.produces.forEach(p=>{
+    const [c,sc]=p.split('|'); if(sc!=='self') return;
+    b.an.triggers.forEach(t=>{ const [c2,sc2]=t.split('|');
+      if(sc2==='self'&&feeds(c).includes(c2)) out.push({concept:c2,dir:'ab'}); });
+  });
+  b.an.produces.forEach(p=>{
+    const [c,sc]=p.split('|'); if(sc!=='self') return;
+    a.an.triggers.forEach(t=>{ const [c2,sc2]=t.split('|');
+      if(sc2==='self'&&feeds(c).includes(c2)) out.push({concept:c2,dir:'ba'}); });
+  });
+  const seen=new Set();
+  return out.filter(l=>{ const k=l.concept+l.dir; if(seen.has(k)) return false; seen.add(k); return true; });
+}
+function partnersFor(card,pool){
+  const res=[];
+  pool.forEach(o=>{ if(o.name===card.name) return;
+    const s=synergyBetween(card,o); if(s.length) res.push({card:o,links:s}); });
+  return res.sort((a,b)=>b.links.length-a.links.length);
+}
+function detailPanel(card,ctx){
+  if(!card) return '';
+  const deck=deckEntries().map(e=>e.card);
+  const inDeckPartners=partnersFor(card,deck).slice(0,6);
+  const collPartners=partnersFor(card,filtered().map(e=>e.card).filter(c=>!S.deck.has(c.name)).slice(0,700)).slice(0,6);
+  const abil=card.an.abilities;
+  const role=[...card.cats].map(c=>CATLABEL[c]||c);
+  const why=[];
+  if(card.cats.has('ramp')) why.push('accélère la production de mana, ce qui avance toute la courbe');
+  if(card.cats.has('pioche')) why.push('renouvelle la main : c\'est la ressource qui empêche le deck de s\'essouffler');
+  if(card.cats.has('removal')) why.push('répond aux menaces adverses');
+  if(card.cats.has('tuteurs')) why.push('va chercher la pièce manquante et rend le deck consistant');
+  if(card.cats.has('jetons')) why.push('multiplie les corps, donc les déclencheurs à l\'arrivée en jeu et au sacrifice');
+  if(card.cats.has('blink')) why.push('réutilise les effets d\'arrivée en jeu');
+  if(card.cats.has('protection')) why.push('protège l\'axe principal du deck');
+  if(card.cats.has('sacrifice')) why.push('transforme les créatures en ressource');
+  if(!why.length) why.push('apporte un effet ponctuel : à évaluer selon le reste de la liste');
+  return `<div class="detail">
+    ${S.images&&(card.imgN||card.img)?`<img class="dimg" src="${esc(card.imgN||card.img)}" alt="${esc(card.name)}" loading="lazy">`:''}
+    <div class="row" style="align-items:flex-start">
+      <div><h3>${esc(card.name)}</h3>
+        <div class="small muted">${esc(card.type)} · CMC ${card.cmc} · ${eur(card.price)}</div></div>
+      <div class="costs" style="margin-left:auto">${manaHTML(card)}</div>
+    </div>
+    <div class="chips">${role.map(r=>`<span class="chip on">${r}</span>`).join('')}</div>
+    <div class="otext">${esc(card.text.replace(/ \/\/ /g,'\n'))}</div>
+    <div class="lab">Pourquoi elle compte</div>
+    <div class="small">Elle ${why.join(', et ')}.</div>
+    <div class="lab" style="margin-top:8px">Capacités extraites</div>
+    ${abil.length?abil.map(a=>`<div class="arc">${a.from.map(f=>esc(NODE[f].label)).join(' + ')} → <b>${a.to.map(t=>esc(NODE[t].label)).join(', ')}</b> <span class="muted">(${a.kind}${a.scopeTrig==='adv'?', côté adverse':''})</span></div>`).join(''):'<div class="arc muted">aucune capacité reconnue</div>'}
+    <div class="lab" style="margin-top:8px">Interactions dans le deck</div>
+    ${inDeckPartners.length?inDeckPartners.map(p=>`<div class="arc"><b>${esc(p.card.name)}</b> — ${p.links.map(l=>(l.dir==='ab'?'fournit ':'reçoit ')+NODE[l.concept].label.toLowerCase()).join(', ')}</div>`).join('')
+      :'<div class="arc muted">rien dans le deck ne se branche encore dessus</div>'}
+    <div class="lab" style="margin-top:8px">À ajouter depuis la collection</div>
+    ${collPartners.length?collPartners.map(p=>`<div class="arc"><b>${esc(p.card.name)}</b> — ${p.links.map(l=>NODE[l.concept].label.toLowerCase()).join(', ')}
+      <button class="btn sm" data-act="toDeck" data-name="${esc(p.card.name)}">Ajouter</button></div>`).join('')
+      :'<div class="arc muted">aucune carte compatible dans la collection filtrée</div>'}
+    <div class="row" style="margin-top:10px">
+      ${ctx==='deck'
+        ? `<button class="btn" data-act="fromDeck" data-name="${esc(card.name)}">Retirer du deck</button>
+           ${card.isLegendaryCreature&&fmt().commander?`<button class="btn" data-act="setCmd" data-name="${esc(card.name)}">Désigner commandant</button>`:''}`
+        : `<button class="btn pri" data-act="toDeck" data-name="${esc(card.name)}">Ajouter au deck</button>`}
+      <button class="btn" data-act="fiche" data-name="${esc(card.name)}">Voir en grand</button>
+      <button class="btn" data-act="focusCard" data-name="${esc(card.name)}">Voir dans le graphe</button>
+      <a class="btn" href="${esc(cmLink(card))}" target="_blank" rel="noopener">Cardmarket ↗</a>
+      <button class="btn sm" data-act="closeDetail">Fermer</button>
+    </div>
+  </div>`;
+}
+
+/* =====================================================================
+   13. SECTION E — deck
+   ===================================================================== */
+function targets(){
+  const f=fmt(), k=f.size/100;
+  if(S.format==='limite') return {terrains:17,creatures:15,removal:4,pioche:2,ramp:1,tuteurs:0,wipe:0,protection:1};
+  if(S.format==='standard') return {terrains:24,creatures:18,removal:8,pioche:6,ramp:2,tuteurs:1,wipe:2,protection:2};
+  return {terrains:Math.round(36*k),creatures:Math.round(25*k),removal:Math.round(9*k),pioche:Math.round(10*k),
+          ramp:Math.round(10*k),tuteurs:Math.round(3*k),wipe:Math.round(2*k),protection:Math.round(3*k)};
+}
+function deckCounts(){
+  const c={}; Object.keys(targets()).forEach(k=>c[k]=0);
+  deckEntries().forEach(e=>{ e.card.cats.forEach(cat=>{ if(cat in c) c[cat]+=e.qty; }); });
+  return c;
+}
+function gauge(label,val,tgt){
+  const pct=Math.min(100,Math.round(val/Math.max(1,tgt)*100));
+  const col=val>=tgt?'var(--ok)':(val>=tgt*0.6?'var(--warn)':'var(--bad)');
+  const diff=val-tgt;
+  return `<div class="gauge"><div class="top"><span>${label}</span><span class="mono">${val} / ${tgt} ${diff<0?`<span style="color:var(--bad)">${diff}</span>`:'<span style="color:var(--ok)">ok</span>'}</span></div>
+    <div class="track"><div class="fill" style="width:${pct}%;background:${col}"></div></div></div>`;
+}
+function legality(){
+  const f=fmt(), n=deckSize(), msgs=[];
+  if(n>f.size) msgs.push(`${n-f.size} carte(s) de trop (${n}/${f.size}).`);
+  if(n<f.size) msgs.push(`Il manque ${f.size-n} carte(s) pour atteindre ${f.size}.`);
+  deckEntries().forEach(e=>{ if(e.qty>f.maxCopies && !/^Basic Land/i.test(e.card.type)) msgs.push(`${e.card.name} : ${e.qty} copies pour ${f.maxCopies} autorisée(s).`); });
+  if(f.commander&&!S.commander) msgs.push('Aucun commandant désigné : choisissez une créature légendaire dans le deck.');
+  if(S.commander){
+    const cmd=find(S.commander);
+    deckEntries().forEach(e=>{ const bad=e.card.identity.filter(c=>!cmd.identity.includes(c));
+      if(bad.length) msgs.push(`${e.card.name} sort de l'identité couleur du commandant (${bad.join('')}).`); });
+  }
+  if(S.format==='perso'){
+    'WUBRG'.split('').forEach(c=>{
+      if(!S.colors.has(c)) return;
+      const n2=deckEntries().filter(e=>e.card.identity.includes(c)).reduce((a,e)=>a+e.qty,0);
+      const l=S.custom.colorLimits[c];
+      if(n2<l.min) msgs.push(`Couleur ${c} : ${n2} carte(s) pour un minimum de ${l.min}.`);
+      if(n2>l.max) msgs.push(`Couleur ${c} : ${n2} carte(s) pour un maximum de ${l.max}.`);
+    });
+  }
+  return msgs;
+}
+function ficheHTML(card){
+  const deck=deckEntries().map(e=>e.card);
+  const dansDeck=S.deck.get(card.name)||0;
+  const tgt=targets(), cnt=deckCounts();
+  const sug=currentSuggestions().find(x=>x.card.name===card.name);
+  const partD=partnersFor(card,deck).slice(0,8);
+  const partC=partnersFor(card,filtered().map(e=>e.card).filter(c=>!S.deck.has(c.name)).slice(0,700)).slice(0,6);
+  const dispo=availableFor(card);
+  const offre=dispo>0?null:bestOffer(card);
+
+  const roles=[...card.cats].map(c=>{
+    const l=CATLABEL[c]||c;
+    if(c in tgt){ const manque=tgt[c]-(cnt[c]||0);
+      return `<span class="chip on">${l}</span> <span class="small muted">${cnt[c]||0}/${tgt[c]}${manque>0?` — il en manque ${manque}`:' — objectif atteint'}</span>`; }
+    return `<span class="chip">${l}</span>`;
+  });
+
+  const pourquoi=[];
+  if(sug&&sug.reasons.length) sug.reasons.forEach(r=>pourquoi.push(r));
+  else{
+    if(partD.length) pourquoi.push(`se branche à ${partD.length} carte(s) déjà présentes dans le deck`);
+    card.cats.forEach(c=>{ if(c in tgt && (tgt[c]-(cnt[c]||0))>0)
+      pourquoi.push(`comble un manque : ${CATLABEL[c]} (${cnt[c]||0} pour ${tgt[c]} recommandés)`); });
+  }
+  if(!card.isLand&&!pourquoi.some(r=>/courbe/.test(r))){
+    const meme=deck.filter(c=>!c.isLand&&c.cmc===card.cmc).length;
+    pourquoi.push(`courbe de mana : ${meme} carte(s) du deck coûtent déjà ${card.cmc} mana`);
+  }
+  if(!pourquoi.length) pourquoi.push("aucun branchement repéré avec le deck actuel : elle vaut surtout pour son effet propre");
+
+  const lien=p=>{
+    const donne=[...new Set(p.links.filter(l=>l.dir==='ab').map(l=>NODE[l.concept].label.toLowerCase()))];
+    const recoit=[...new Set(p.links.filter(l=>l.dir==='ba').map(l=>NODE[l.concept].label.toLowerCase()))];
+    const bouts=[];
+    if(donne.length) bouts.push(`elle lui fournit ${donne.join(', ')}`);
+    if(recoit.length) bouts.push(`elle en reçoit ${recoit.join(', ')}`);
+    return `<div class="arc"><b>${esc(p.card.name)}</b> — ${bouts.join(' · ')}</div>`;
+  };
+  const noeuds=[...new Set(card.an.edges.flatMap(e=>[e.from,e.to]))];
+
+  return `<div class="fiche">
+      ${S.images&&(card.imgN||card.img)?`<img class="visu" src="${esc(card.imgN||card.img)}" alt="${esc(card.name)}">`:''}
+      <div class="meta">
+        <div class="costs" style="margin-bottom:4px">${manaHTML(card)}</div>
+        <div class="small muted">${esc(card.type)}${card.cmc?` · CMC ${card.cmc}`:''} · ${eur(card.price)}${card.price?' (tendance Cardmarket)':''}</div>
+        <div class="chips" style="margin-top:8px">${roles.join(' ')||'<span class="chip">rôle non identifié</span>'}</div>
+        <div class="otext">${esc((card.text||'(texte non disponible)').replace(/ \/\/ /g,'\n'))}</div>
+        <div class="small ${dispo>0?'muted':'buy'}">${dispo>0
+          ? `${dispo} exemplaire(s) disponibles dans la collection${dansDeck?` · ${dansDeck} déjà dans le deck`:''}`
+          : (offre?`hors collection — ≈ ${eur(offre.price)} sur Cardmarket (${offre.condition} ou mieux)`:'hors collection et hors budget')}</div>
+      </div>
+    </div>
+    <div class="bloc"><h4>Ce qu'elle apporte au deck</h4>
+      ${pourquoi.map(r=>`<div class="puce">${esc(r)}</div>`).join('')}</div>
+    <div class="bloc"><h4>Interactions dans le graphe</h4>
+      <div class="small muted" style="margin-bottom:5px">Cartes du deck</div>
+      ${partD.length?partD.map(lien).join(''):'<div class="arc muted">aucune pour le moment</div>'}
+      <div class="small muted" style="margin:8px 0 5px">Cartes de la collection filtrée</div>
+      ${partC.length?partC.map(lien).join(''):'<div class="arc muted">aucune</div>'}</div>
+    <div class="bloc"><h4>Capacités extraites</h4>
+      ${card.an.abilities.length?card.an.abilities.map(a=>`<div class="arc">${a.from.map(f=>esc(NODE[f].label)).join(' + ')} → <b>${a.to.map(t=>esc(NODE[t].label)).join(', ')}</b> <span class="muted">(${a.kind}${a.scopeTrig==='adv'?', côté adverse':''})</span></div>`).join('')
+        :'<div class="arc muted">aucune capacité reconnue dans le texte</div>'}
+      ${noeuds.length?`<div class="chips" style="margin-top:7px">${noeuds.map(n=>`<button class="chip" data-act="focusNodeFrom" data-node2="${n}">${esc(NODE[n].label)}</button>`).join('')}</div>
+        <div class="small muted">Touchez un nœud pour l'isoler dans le graphe.</div>`:''}</div>`;
+}
+function openCardModal(name){
+  const card=find(name); if(!card) return;
+  const dispo=availableFor(card), offre=dispo>0?null:bestOffer(card);
+  const actions=[
+    dispo>0?`<button class="btn pri" data-act="toDeck" data-name="${esc(card.name)}" value="ok">Ajouter au deck</button>`
+      :(offre?`<button class="btn pri" data-act="buy" data-name="${esc(card.name)}" value="ok">Acheter + ajouter</button>`:''),
+    (S.deck.get(card.name)||0)?`<button class="btn" data-act="fromDeck" data-name="${esc(card.name)}" value="ok">Retirer du deck</button>`:'',
+    `<a class="btn" href="${esc(cmLink(card))}" target="_blank" rel="noopener">Cardmarket ↗</a>`,
+    `<button class="btn" value="ok">Fermer</button>`
+  ].filter(Boolean).join('');
+  openDialog(card.name,ficheHTML(card),actions,true);
+}
+function renderE(){
+  const entries=deckEntries(), n=deckSize(), f=fmt(), cnt=deckCounts(), tgt=targets();
+  const cmcSplit={};
+  entries.forEach(e=>{ if(e.card.isLand) return; const k=Math.min(e.card.cmc,9);
+    cmcSplit[k]=cmcSplit[k]||{W:0,U:0,B:0,R:0,G:0,C:0};
+    (e.card.identity.length?e.card.identity:['C']).forEach(col=>cmcSplit[k][col]+=e.qty/(e.card.identity.length||1)); });
+  const nonland=entries.filter(e=>!e.card.isLand);
+  const avg=nonland.length?(nonland.reduce((a,e)=>a+e.card.cmc*e.qty,0)/nonland.reduce((a,e)=>a+e.qty,0)):0;
+  const price=entries.reduce((a,e)=>a+e.card.price*e.qty,0);
+  const msgs=legality();
+  const grouped={}; entries.forEach(e=>{ const t=mainType(e.card); (grouped[t]=grouped[t]||[]).push(e); });
+  document.getElementById('bodyE').innerHTML=`
+    <div class="row" style="margin-bottom:10px">
+      <span class="pill">Cartes <b>${n}/${f.size}</b></span>
+      <span class="pill">CMC moyen <b>${avg.toFixed(2)}</b></span>
+      <span class="pill">Valeur <b>${eur(price)}</b></span>
+      ${S.commander?`<span class="pill">Commandant <b>${esc(S.commander)}</b></span>`:''}
+      <div class="seg" style="margin-left:auto">
+        <button data-view="grid" aria-pressed="${S.view==='grid'}">Grille</button>
+        <button data-view="list" aria-pressed="${S.view==='list'}">Liste</button>
+      </div>
+      <button class="btn" data-act="exportDeck">Exporter</button>
+      <button class="btn danger" data-act="clearDeck">Vider le deck</button>
+    </div>
+    ${msgs.length?`<div class="warnbox"><b>À corriger</b><ul style="margin:5px 0 0 16px;padding:0">${msgs.slice(0,6).map(m=>`<li>${esc(m)}</li>`).join('')}</ul></div>`:`<div class="warnbox" style="border-color:#2f6b46;background:rgba(79,159,104,.1)">Le deck respecte les contraintes du format.</div>`}
+    <h3 style="margin:12px 0 6px;font-size:15px">Courbe de mana</h3>
+    ${histogram(cmcSplit,true)}
+    <h3 style="margin:14px 0 6px;font-size:15px">Équilibre des rôles</h3>
+    <div class="statgrid">${Object.keys(tgt).map(k=>gauge(CATLABEL[k]||k,cnt[k]||0,tgt[k])).join('')}</div>
+    <h3 style="margin:14px 0 6px;font-size:15px">Liste</h3>
+    ${n?Object.keys(grouped).sort((a,b)=>TYPE_ORDER.indexOf(a)-TYPE_ORDER.indexOf(b)).map(t=>`
+      <div class="group"><h4>${t} <span class="small muted">${grouped[t].reduce((a,e)=>a+e.qty,0)}</span></h4>
+      ${S.view==='grid'?`<div class="grid">${grouped[t].map(e=>cardTile(e,'deck')).join('')}</div>`
+                       :`<div class="list">${grouped[t].map(e=>cardRow(e,'deck')).join('')}</div>`}</div>`).join('')
+      :'<div class="empty">Le deck est vide. Ajoutez des cartes depuis la collection (▲) ou depuis les suggestions en section F.</div>'}
+    ${S.selectedCtx==='deck'&&S.selected?detailPanel(find(S.selected),'deck'):''}`;
+  document.getElementById('hintE').textContent=`${n}/${f.size}`;
+  if(S.view==='grid') setTimeout(()=>queueImages(entries.map(e=>e.card)),0);
+}
+
+/* =====================================================================
+   14. MARCHÉ SIMULÉ (achat hors collection)
+   ===================================================================== */
+// Cardmarket : échelle d'état, langues et types de vendeur réels du site
+const CONDITIONS=[['MT','Mint'],['NM','Near Mint'],['EX','Excellent'],['GD','Good'],['LP','Light Played'],['PL','Played'],['PO','Poor']];
+const COND_ORDER=CONDITIONS.map(c=>c[0]);
+const COND_MULT={MT:1.35,NM:1.15,EX:1.00,GD:0.88,LP:0.78,PL:0.68,PO:0.50};
+const CM_LANGS=[['any','Indifférente'],['FR','Français'],['EN','Anglais'],['DE','Allemand'],['ES','Espagnol'],['IT','Italien'],['JP','Japonais']];
+const LANG_MULT={any:1,FR:1.06,EN:1.00,DE:0.98,ES:0.95,IT:0.95,JP:1.12};
+const SELLER_TYPES=[['any','Indifférent'],['private','Particulier'],['commercial','Professionnel'],['powerseller','Powerseller']];
+const SELLER_MULT={any:1,private:0.97,commercial:1.05,powerseller:1.03};
+const CM_COUNTRIES=[['any','Indifférent'],['FR','France'],['BE','Belgique'],['DE','Allemagne'],['ES','Espagne'],['IT','Italie'],['NL','Pays-Bas']];
+
+function cmLink(card){
+  return card.cmUrl || 'https://www.cardmarket.com/fr/Magic/Products/Search?searchString='+encodeURIComponent(card.name);
+}
+// Le prix de référence est la tendance Cardmarket relayée par Scryfall (champ prices.eur).
+// L'état, la langue et le type de vendeur ne sont pas lisibles depuis cette page :
+// ils servent à estimer l'écart au prix de tendance, ce qui est signalé comme une estimation.
+function cmEstimate(card){
+  const base=card.price||0;
+  if(base<=0) return null;
+  const m=(COND_MULT[S.budget.condition]||1)*(LANG_MULT[S.budget.lang]||1)
+        *(SELLER_MULT[S.budget.sellerType]||1)*(S.budget.country==='any'?1:1.02);
+  return Math.max(0.02,Math.round(base*m*100)/100);
+}
+function bestOffer(card){
+  const price=cmEstimate(card);
+  if(price===null||price>S.budget.perCard) return null;
+  const langLabel=(CM_LANGS.find(l=>l[0]===S.budget.lang)||['','Indifférente'])[1];
+  const typeLabel=(SELLER_TYPES.find(t=>t[0]===S.budget.sellerType)||['','Indifférent'])[1];
+  return {price,condition:S.budget.condition,lang:langLabel,seller:typeLabel,
+          country:(CM_COUNTRIES.find(c=>c[0]===S.budget.country)||['','Indifférent'])[1],estimate:true};
+}
+function spent(){ let t=0; S.bought.forEach(b=>t+=b.price*b.qty); return t; }
+
+/* =====================================================================
+   15. SECTION F — suggestions
+   ===================================================================== */
+function currentSuggestions(){
+  const deck=deckEntries().map(e=>e.card);
+  const f=fmt(), cnt=deckCounts(), tgt=targets();
+  const cmcCount={}; deck.forEach(c=>{ if(!c.isLand) cmcCount[Math.min(c.cmc,7)]=(cmcCount[Math.min(c.cmc,7)]||0)+1; });
+  const ideal={0:0.04,1:0.16,2:0.22,3:0.20,4:0.15,5:0.11,6:0.07,7:0.05};
+  const nonlandTotal=Math.max(1,deck.filter(c=>!c.isLand).length);
+  const cmdId=S.commander?find(S.commander).identity:null;
+  // graphe conceptuel du deck, puis fermeture transitive : sert à repérer les cartes
+  // qui ferment une boucle ou qui relient deux effets déjà présents
+  const IDX={}; NODES.forEach((n,i)=>IDX[n[0]]=i);
+  const NN=NODES.length, MAXI=2;
+  const realAdj=Array.from({length:NN},()=>[]), impAdj=Array.from({length:NN},()=>[]);
+  const seenE=new Set();
+  deck.forEach(d=>d.an.edges.forEach(e=>{
+    // engager une permanente adverse ne remet pas les vôtres en position d'être activées :
+    // seul l'arc de règle « dégagement → engagement » autorise ce retour
+    if(e.to==='ENGAGEMENT') return;
+    const k=e.from+'>'+e.to;
+    if(!seenE.has(k)){ seenE.add(k); realAdj[IDX[e.from]].push(IDX[e.to]); } }));
+  if(S.showImplicit) IMPLICIT.forEach(([a,b])=>impAdj[IDX[a]].push(IDX[b]));
+  // un retour ne compte que s'il emprunte au moins un arc réel du deck
+  // et au plus deux arcs de règles : sinon « ramp → mana → sort » suffirait à tout boucler
+  const reach=Array.from({length:NN},()=>new Uint8Array(NN));
+  for(let st=0;st<NN;st++){
+    const vis=new Set([st+':0:0']); const q=[[st,0,0]];
+    while(q.length){
+      const [nd,imp,real]=q.shift();
+      if(real) reach[st][nd]=1;
+      realAdj[nd].forEach(nx=>{ const k=nx+':'+imp+':1';
+        if(!vis.has(k)){ vis.add(k); q.push([nx,imp,1]); } });
+      if(imp<MAXI) impAdj[nd].forEach(nx=>{ const k=nx+':'+(imp+1)+':'+real;
+        if(!vis.has(k)){ vis.add(k); q.push([nx,imp+1,real]); } });
+    }
+  }
+  const deckProd=new Map(), deckTrig=new Map();
+  const push=(m,k,v)=>{ if(!m.has(k)) m.set(k,[]); m.get(k).push(v); };
+  deck.forEach(d=>{
+    d.an.produces.forEach(pp=>{ const [cc,sc]=pp.split('|'); if(sc!=='self') return;
+      feeds(cc).forEach(k=>push(deckProd,k,d.name)); });
+    d.an.triggers.forEach(tt=>{ const [cc,sc]=tt.split('|'); if(sc!=='self') return; push(deckTrig,cc,d.name); });
+  });
+
+  const pool=[];
+  filtered().forEach(e=>{ if(availableFor(e.card)>0 && (S.deck.get(e.card.name)||0)<f.maxCopies) pool.push({card:e.card,source:'collection'}); });
+  // cartes hors collection : uniquement si un budget est réellement ouvert
+  const budgetLeft=S.budget.total-spent();
+  if(S.budget.total>0&&S.budget.perCard>0&&budgetLeft>0){
+    DB.forEach(c=>{
+      if(S.collection.has(c.name)&&(S.collection.get(c.name)||0)>0) return;
+      if(!colorOK(c)) return;
+      if((S.deck.get(c.name)||0)>=f.maxCopies) return;
+      const o=bestOffer(c);
+      if(o&&o.price>0&&o.price<=budgetLeft) pool.push({card:c,source:'achat',offer:o});
+    });
+  }
+
+  const res=[];
+  pool.forEach(p=>{
+    const c=p.card;
+    if(cmdId&&c.identity.some(x=>!cmdId.includes(x))) return;
+    let score=0; const reasons=[];
+    // synergies avec le deck
+    const linkMap=new Map();
+    const addLink=(nm,concept,dir)=>{ if(nm===c.name) return;
+      if(!linkMap.has(nm)) linkMap.set(nm,new Map());
+      linkMap.get(nm).set(concept+'|'+dir,{concept,dir}); };
+    c.an.produces.forEach(pp=>{ const [cc,sc]=pp.split('|'); if(sc!=='self') return;
+      feeds(cc).forEach(k=>(deckTrig.get(k)||[]).forEach(nm=>addLink(nm,k,'ab'))); });
+    c.an.triggers.forEach(tt=>{ const [cc,sc]=tt.split('|'); if(sc!=='self') return;
+      (deckProd.get(cc)||[]).forEach(nm=>addLink(nm,cc,'ba')); });
+    const partners=[...linkMap.entries()].map(([nm,m])=>{
+      const links=[...m.values()];
+      let w=0; links.forEach(l=>{ w += l.concept==='ETB'?0.8:(l.dir==='ab'?3.2:2.6); });
+      return {name:nm,links,w};
+    });
+    let weight=partners.reduce((a,p2)=>a+p2.w,0);
+    partners.sort((a,b)=>b.w-a.w);
+    score+=Math.min(26,weight);
+    if(partners.length){
+      const detail=partners.slice(0,3).map(p2=>{
+        const cs=[...new Set(p2.links.map(l=>NODE[l.concept].label.toLowerCase()))].slice(0,2).join(', ');
+        return `${p2.name} (${cs})`;
+      }).join(', ');
+      reasons.push(`se branche à ${partners.length} carte(s) : ${detail}`);
+    }
+    // lecture du graphe : boucle fermée, pont entre deux effets, nœud sélectionné
+    const graph=[];
+    let loopEdge=null;
+    c.an.edges.forEach(e=>{ if(!loopEdge && reach[IDX[e.to]][IDX[e.from]]) loopEdge=e; });
+    if(loopEdge){
+      graph.push('boucle'); score+=12;
+      reasons.unshift(`ferme une boucle avec le deck : ${NODE[loopEdge.from].label} → ${NODE[loopEdge.to].label} → … → ${NODE[loopEdge.from].label}`);
+    }
+    const hasAb=partners.some(p2=>p2.links.some(l=>l.dir==='ab'));
+    const hasBa=partners.some(p2=>p2.links.some(l=>l.dir==='ba'));
+    if(hasAb&&hasBa){ graph.push('pont'); score+=5;
+      reasons.unshift('relie deux effets déjà présents : elle reçoit un déclencheur du deck et en fournit un autre'); }
+    const touches=S.focusNode&&c.an.edges.some(e=>e.from===S.focusNode||e.to===S.focusNode);
+    if(touches){ graph.push('noeud'); score+=4;
+      reasons.unshift(`touche le nœud sélectionné dans le graphe : ${NODE[S.focusNode].label}`); }
+    // besoins par rôle
+    let needBonus=0;
+    c.cats.forEach(cat=>{ if(cat in tgt){ const miss=tgt[cat]-(cnt[cat]||0);
+      if(miss>0){ needBonus+=Math.min(6,miss*1.1); reasons.push(`comble un manque : ${CATLABEL[cat]} (${cnt[cat]||0}/${tgt[cat]})`); } } });
+    score+=Math.min(9,needBonus);
+    // courbe de mana
+    if(!c.isLand){
+      const k=Math.min(c.cmc,7);
+      const have=(cmcCount[k]||0)/nonlandTotal, want=ideal[k];
+      const gap=want-have;
+      score+=gap*14;
+      if(gap>0.05) reasons.push(`renforce la courbe à ${c.cmc} mana`);
+      if(gap<-0.06) reasons.push(`attention : la courbe est déjà chargée à ${c.cmc}`);
+    }
+    // densité de capacités utiles
+    score+=Math.min(3,c.an.edges.length*0.35);
+    if(p.source==='achat'){ score-=2.5; reasons.push(`hors collection — ${eur(p.offer.price)} (${p.offer.quality}, ${p.offer.lang}, ${p.offer.seller})`); }
+    if(deckSize()===0) score+=c.cats.has('ramp')||c.cats.has('pioche')?4:0;
+    res.push({card:c,score,reasons,partners,source:p.source,offer:p.offer,graph});
+  });
+  return res.filter(r=>r.score>0).sort((a,b)=>b.score-a.score);
+}
+function sugRow(s){
+  const mark={boucle:'boucle',pont:'pont',noeud:'nœud'};
+  return `<div style="border:1px solid ${s.graph&&s.graph.length?'var(--brass-d)':'var(--line)'};border-radius:8px;padding:8px;background:var(--panel)">
+    <div class="row" style="gap:6px">
+      ${S.images&&s.card.img?`<img src="${esc(s.card.img)}" alt="" style="width:34px;border-radius:3px" loading="lazy">`
+        :`<span class="dot" style="background:${stripeColor(s.card)}"></span>`}
+      <b style="font-family:var(--display)">${esc(s.card.name)}</b>
+      <span class="costs">${manaHTML(s.card,true)}</span>
+      ${(s.graph||[]).map(g=>`<span class="tag" style="border-color:var(--brass);color:var(--brass)">${mark[g]}</span>`).join('')}
+      <span class="mono small muted">score ${s.score.toFixed(1)}</span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn sm" data-act="fiche" data-name="${esc(s.card.name)}">Détail</button>
+        <button class="btn sm ${s.source==='achat'?'':'pri'}" data-act="${s.source==='achat'?'buy':'toDeck'}" data-name="${esc(s.card.name)}">${s.source==='achat'?'Acheter + ajouter':'Ajouter'}</button>
+      </span>
+    </div>
+    <div class="why">${s.reasons.slice(0,3).map(esc).join(' · ')||'complète le deck'}</div>
+    ${s.source==='achat'?`<div class="buy">≈ ${eur(s.offer.price)} · ${s.offer.condition} ou mieux · ${s.offer.lang} · ${s.offer.seller}
+      — <a href="${esc(cmLink(s.card))}" target="_blank" rel="noopener" style="color:var(--brass)">voir les offres sur Cardmarket ↗</a></div>`:''}
+  </div>`;
+}
+function renderF(){
+  const sug=currentSuggestions();
+  const graphPicks=sug.filter(s=>s.graph&&s.graph.length&&(!S.focusNode||s.graph.includes('noeud')));
+  const byType={};
+  sug.forEach(s=>{ const t=mainType(s.card); (byType[t]=byType[t]||[]).push(s); });
+  const left=S.budget.total-spent();
+  const buys=[...S.bought.entries()].filter(([,b])=>b.qty>0);
+  document.getElementById('bodyF').innerHTML=`
+    <div class="group">
+      <h4>Achats sur Cardmarket <a class="small" style="color:var(--brass)" href="https://www.cardmarket.com/fr/Magic" target="_blank" rel="noopener">cardmarket.com ↗</a></h4>
+      <div class="row">
+        <div class="field"><label class="lab" for="bT">Budget total (€)</label><input id="bT" type="number" min="0" step="1" value="${S.budget.total}" data-bud="total" style="width:96px"></div>
+        <div class="field"><label class="lab" for="bP">Prix max / carte (€)</label><input id="bP" type="number" min="0" step="1" value="${S.budget.perCard}" data-bud="perCard" style="width:96px"></div>
+        <div class="field"><label class="lab" for="bQ">État minimum</label>
+          <select id="bQ" data-bud="condition">${CONDITIONS.map(([k,l])=>`<option value="${k}" ${S.budget.condition===k?'selected':''}>${k} — ${l}</option>`).join('')}</select></div>
+        <div class="field"><label class="lab" for="bL">Langue</label>
+          <select id="bL" data-bud="lang">${CM_LANGS.map(([k,l])=>`<option value="${k}" ${S.budget.lang===k?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label class="lab" for="bS">Type de vendeur</label>
+          <select id="bS" data-bud="sellerType">${SELLER_TYPES.map(([k,l])=>`<option value="${k}" ${S.budget.sellerType===k?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label class="lab" for="bC">Pays du vendeur</label>
+          <select id="bC" data-bud="country">${CM_COUNTRIES.map(([k,l])=>`<option value="${k}" ${S.budget.country===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <div class="small muted" style="margin-top:6px">${S.budget.total>0&&S.budget.perCard>0
+        ? `Dépensé ${eur(spent())} · reste ${eur(Math.max(0,left))}`
+        : 'Budget à zéro : seules les cartes de votre collection sont proposées.'}</div>
+      <div class="small muted" style="margin-top:4px">Prix de référence : tendance Cardmarket, relayée par Scryfall et rafraîchie avec les visuels. L'état, la langue et le type de vendeur ajustent une <b>estimation</b> : les offres réelles se consultent sur la fiche Cardmarket, via le lien de chaque carte.</div>
+      ${buys.length?`<div class="small" style="margin-top:6px">Panier : ${buys.map(([n,b])=>`<a href="${esc(cmLink(find(n)||{name:n}))}" target="_blank" rel="noopener" style="color:var(--brass)">${esc(n)}</a> ×${b.qty} (${eur(b.price*b.qty)})`).join(' · ')}</div>
+         <div class="row" style="margin-top:6px"><button class="btn" data-act="wants">Exporter la liste de wants Cardmarket</button></div>`:''}
+    </div>
+    ${graphPicks.length?`
+      <div class="group" style="border-color:var(--brass-d)">
+        <h4>Repérées par le graphe des capacités
+          <span class="small muted">${S.focusNode?`autour de « ${esc(NODE[S.focusNode].label)} »`:'boucles fermées et ponts entre effets'}</span></h4>
+        <div class="list">${graphPicks.slice(0,8).map(s=>sugRow(s)).join('')}</div>
+        <div class="small muted" style="margin-top:6px">Ces cartes viennent de la lecture des arcs : elles referment un cycle du graphe ou relient deux effets déjà présents dans le deck.${S.focusNode?' Le filtre suit le nœud sélectionné en section D.':''}</div>
+      </div>`:''}
+    ${sug.length?TYPE_ORDER.filter(t=>byType[t]).map(t=>`
+      <div class="group"><h4>${t} <span class="small muted">${byType[t].length} propositions</span></h4>
+        <div class="list">${byType[t].slice(0,6).map(s=>sugRow(s)).join('')}</div>
+      </div>`).join('')
+      :'<div class="empty">Aucune suggestion. Ajoutez des cartes à la collection, élargissez les couleurs ou augmentez le budget.</div>'}
+    <div class="small muted">Le score combine les branchements avec le deck (un effet produit ici déclenche une capacité là-bas), les rôles manquants, la courbe de mana et la densité de capacités. Les cartes hors collection sont pénalisées et limitées par le budget.
+      <br>Pas de connexion à votre compte : Cardmarket n'ouvre plus son API aux nouvelles applications et interdit le partage d'identifiants, et une page web ne peut pas signer les requêtes OAuth sans exposer le secret. L'atelier s'appuie donc sur les prix Cardmarket publiés par Scryfall, et vous renvoie vers la fiche du site pour l'achat.</div>`;
+  document.getElementById('hintF').textContent=`${sug.length} pistes${graphPicks.length?` · ${graphPicks.length} via le graphe`:''}`;
+}
+
+/* =====================================================================
+   16. RENDU GLOBAL
+   ===================================================================== */
+function renderTop(){
+  const all=collectionCards().reduce((n,e)=>n+e.qty,0);
+  const f=fmt();
+  document.getElementById('topStats').innerHTML=`
+    <span class="pill">Collection <b>${all}</b></span>
+    <span class="pill">Filtrées <b>${filtered().reduce((n,e)=>n+e.qty,0)}</b></span>
+    <span class="pill">Deck <b>${deckSize()}/${f.size}</b></span>
+    <span class="pill">Panier <b>${eur(spent())}</b></span>`;
+}
+function renderAll(){ renderTop(); renderA(); renderB(); renderC(); renderD(); renderE(); renderF(); }
+
+/* =====================================================================
+   17. INTERACTIONS
+   ===================================================================== */
+const PAGE=200;
+function parseMtgoList(txt){
+  const out=new Map();
+  String(txt).replace(/^\uFEFF/,'').split(/\r?\n/).forEach(raw=>{
+    let l=raw.replace(/\t+/g,' ').trim();
+    if(!l||/^(\/\/|#)/.test(l)) return;
+    if(/^(deck|sideboard|commander|companion|maybeboard|tokens?)\s*:?\s*$/i.test(l)) return;
+    l=l.replace(/^sb:\s*/i,'');
+    const m=l.match(/^(\d+)\s*[xX]?\s+(.+)$/);
+    let qty=1,nm=l;
+    if(m){ qty=parseInt(m[1],10)||1; nm=m[2]; }
+    nm=nm.replace(/\s*[\(\[][^\)\]]*[\)\]].*$/,'')   // (SET) 123, [SET]
+         .replace(/\s*\*[^*]*\*\s*$/,'')                // marqueur foil *F*
+         .replace(/\s*<[^>]*>\s*$/,'')
+         .trim();
+    // cartes recto-verso et cartes coupées : « A//B », « A / B », « A|B » deviennent « A // B »
+    nm=nm.replace(/\s*(?:\/\/|\||\/)\s*/g,' // ').replace(/\s{2,}/g,' ').trim();
+    if(!nm) return;
+    const k=norm(nm);
+    out.set(k,{name:nm,qty:(out.get(k)?out.get(k).qty:0)+Math.max(1,qty)});
+  });
+  return [...out.values()];
+}
+function mergeInto(card,canonical){
+  // la carte existe déjà sous son nom exact : on fusionne les quantités
+  const q=S.collection.get(card.name)||0, d=S.deck.get(card.name)||0;
+  if(q) S.collection.set(canonical.name,(S.collection.get(canonical.name)||0)+q);
+  if(d) S.deck.set(canonical.name,(S.deck.get(canonical.name)||0)+d);
+  S.collection.delete(card.name); S.deck.delete(card.name);
+  const i=DB.indexOf(card); if(i>=0) DB.splice(i,1);
+  unindexCard(card);
+  if(S.commander===card.name) S.commander=canonical.name;
+  if(S.selected===card.name) S.selected=canonical.name;
+  return canonical;
+}
+function renameCard(card,newName){
+  if(card.name===newName) return card;
+  const existing=BY_NAME[norm(newName)];
+  if(existing&&existing!==card) return mergeInto(card,existing);
+  const old=card.name;
+  unindexCard(card);
+  card.name=newName; indexCard(card);
+  [S.collection,S.deck].forEach(m=>{ if(m.has(old)){ m.set(newName,(m.get(newName)||0)+m.get(old)); m.delete(old); } });
+  if(S.bought.has(old)){ S.bought.set(newName,S.bought.get(old)); S.bought.delete(old); }
+  if(S.commander===old) S.commander=newName;
+  if(S.selected===old) S.selected=newName;
+  return card;
+}
+function frontFace(n){ return String(n||'').split(' // ')[0].trim(); }
+function scryTarget(sc,map){
+  const keys=[sc.name,frontFace(sc.name)];
+  if(sc.card_faces) sc.card_faces.forEach(f=>keys.push(f.name));
+  for(const k of keys){
+    if(!k) continue;
+    const c=BY_NAME[norm(k)]||LOOSE[loose(k)]||FRONT[loose(k)]||(map&&(map.get(norm(k))||map.get(loose(k))));
+    if(c) return c;
+  }
+  return null;
+}
+function applyScryfall(sc,requested,imagesOnly){
+  const faces=sc.card_faces&&sc.card_faces.length?sc.card_faces:null;
+  const cost=(sc.mana_cost&&sc.mana_cost.length?sc.mana_cost:(faces?(faces[0].mana_cost||''):''))||'—';
+  const type=sc.type_line||(faces?faces[0].type_line:'Inconnu');
+  const text=faces&&!sc.oracle_text
+    ? faces.map(f=>(f.oracle_text||'').replace(/\n/g,' // ')).join(' // ')
+    : (sc.oracle_text||'').replace(/\n/g,' // ');
+  const pr=sc.prices||{};
+  const price=parseFloat(pr.eur||pr.eur_foil||pr.usd||0)||0;
+  const uris=sc.image_uris||(faces&&faces[0]&&faces[0].image_uris)||null;
+  let target=(requested&&typeof requested==='object')?requested
+            :(BY_NAME[norm(sc.name)]||LOOSE[loose(sc.name)]||(requested?find(requested):null));
+  if(target&&(imagesOnly||!target.unknown)){
+    if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img; }
+    if(sc.purchase_uris&&sc.purchase_uris.cardmarket) target.cmUrl=sc.purchase_uris.cardmarket;
+    if(pr.eur) target.price=parseFloat(pr.eur)||target.price;   // tendance Cardmarket du jour
+    return true;
+  }
+  const fresh=buildCard(sc.name,cost,type,price,text);
+  if(Array.isArray(sc.color_identity)) fresh.identity=sc.color_identity.slice();
+  if(typeof sc.cmc==='number') fresh.cmc=sc.cmc;
+  if(!target){ if(uris){ fresh.img=uris.small||uris.normal; fresh.imgN=uris.normal||uris.large||fresh.img; }
+    registerCard(fresh); return true; }
+  target=renameCard(target,sc.name);
+  Object.assign(target,fresh,{name:target.name});
+  if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img; }
+  if(sc.purchase_uris&&sc.purchase_uris.cardmarket) target.cmUrl=sc.purchase_uris.cardmarket;
+  target.unknown=false;
+  return true;
+}
+const imgQueue=[]; let imgBusy=false;
+function queueImages(cards){
+  if(!S.images||S.imagesFailed||typeof fetch!=='function') return;
+  cards.forEach(c=>{ if(!c.img&&!c.imgTried&&!c.unknown){ c.imgTried=true; imgQueue.push(c.name); } });
+  if(imgQueue.length&&!imgBusy) runImageQueue();
+}
+async function runImageQueue(){
+  imgBusy=true;
+  while(imgQueue.length&&!S.imagesFailed){
+    const chunk=imgQueue.splice(0,75);
+    try{
+      const r=await fetch('https://api.scryfall.com/cards/collection',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({identifiers:chunk.map(n=>({name:n}))})});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      // Scryfall omet les identifiants introuvables : l'ordre ne correspond pas à la requête
+      (j.data||[]).forEach(sc=>applyScryfall(sc,scryTarget(sc,null),true));
+    }catch(err){
+      S.imagesFailed=true; imgBusy=false;
+      toast("Visuels indisponibles (hors ligne ou accès bloqué). L'affichage reste en mode texte.");
+      renderB(); return;
+    }
+    renderB(); renderE();
+    await new Promise(res=>setTimeout(res,90));
+  }
+  imgBusy=false;
+}
+async function completeUnknown(names){
+  const todo=[...new Set(names)].map(n=>find(n)).filter(c=>c&&c.unknown);
+  if(!todo.length){ toast('Aucune carte à compléter.'); return; }
+  if(S.enriching){ toast('Complétion déjà en cours.'); return; }
+  S.enriching=true;
+  toast(`Complétion de ${todo.length} carte(s) via Scryfall, comptez environ ${Math.max(1,Math.ceil(todo.length/75*1.3))} s.`);
+
+  // index des noms demandés : nom complet et face avant, en clair et en forme simplifiée
+  const map=new Map();
+  todo.forEach(c=>[norm(c.name),loose(c.name),norm(frontFace(c.name)),loose(frontFace(c.name))]
+    .forEach(k=>{ if(k&&!map.has(k)) map.set(k,c); }));
+
+  const reste=new Set(todo);
+  let ok=0, failed=null;
+
+  async function passe(items,libelle){
+    for(let i=0;i<items.length&&!failed;i+=75){
+      const chunk=items.slice(i,i+75);
+      try{
+        const r=await fetch('https://api.scryfall.com/cards/collection',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({identifiers:chunk.map(x=>({name:x.ident}))})});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const j=await r.json();
+        (j.data||[]).forEach(sc=>{
+          const t=scryTarget(sc,map);
+          if(t&&reste.has(t)&&applyScryfall(sc,t)){ ok++; reste.delete(t); }
+        });
+      }catch(err){ failed=err.message||'réseau indisponible'; return; }
+      toast(`${libelle} : ${Math.min(i+75,items.length)} / ${items.length}…`);
+      await new Promise(res=>setTimeout(res,90));
+    }
+  }
+
+  await passe(todo.map(c=>({ident:c.name})),'Complétion');
+
+  // 2e passe : pour une carte recto-verso, Scryfall répond à la face avant seule
+  const dfc=[...reste].filter(c=>c.name.includes(' // '));
+  if(dfc.length&&!failed) await passe(dfc.map(c=>({ident:frontFace(c.name)})),'Faces avant');
+
+  // 3e passe : recherche tolérante, une carte à la fois, pour les noms mal orthographiés
+  const flous=[...reste].slice(0,60);
+  for(const c of flous){
+    if(failed) break;
+    try{
+      const r=await fetch('https://api.scryfall.com/cards/named?fuzzy='+encodeURIComponent(frontFace(c.name)));
+      if(r.ok){ const sc=await r.json(); if(sc&&sc.name&&applyScryfall(sc,c)){ ok++; reste.delete(c); } }
+    }catch(err){ failed=err.message||'réseau indisponible'; break; }
+    await new Promise(res=>setTimeout(res,90));
+  }
+
+  S.enriching=false;
+  renderAll();
+  const manquantes=[...reste].map(c=>c.name);
+  if(failed) toast(`Complétion interrompue (${failed}). ${ok} carte(s) complétées, les autres restent importées avec des informations minimales.`);
+  else toast(`${ok} carte(s) complétées${manquantes.length?` · ${manquantes.length} introuvable(s) : ${manquantes.slice(0,3).join(', ')}${manquantes.length>3?'…':''}`:''}.`);
+}
+function addToDeck(name){
+  const c=find(name); if(!c) return;
+  const f=fmt();
+  const cur=S.deck.get(name)||0;
+  if(!/^Basic Land/i.test(c.type)&&cur>=f.maxCopies){ toast(`${name} : limite de ${f.maxCopies} copie(s) atteinte.`); return; }
+  if(availableFor(c)<=0){ toast(`Plus d'exemplaire disponible de ${name}. Achetez-le en section F ou ajustez la collection.`); return; }
+  S.deck.set(name,cur+1);
+  if(f.commander&&!S.commander&&c.isLegendaryCreature) S.commander=name;
+  renderAll();
+}
+function removeFromDeck(name){
+  const cur=S.deck.get(name)||0;
+  if(cur<=1){ S.deck.delete(name); if(S.commander===name) S.commander=null; } else S.deck.set(name,cur-1);
+  renderAll();
+}
+function buyCard(name){
+  if(S.budget.total<=0||S.budget.perCard<=0){ toast('Budget à zéro : aucun achat possible. Augmentez le budget en section F.'); return; }
+  const c=find(name); const o=bestOffer(c);
+  if(!o){ toast('Aucune offre ne passe vos filtres de qualité, langue, vendeur ou prix.'); return; }
+  if(spent()+o.price>S.budget.total){ toast('Budget dépassé. Augmentez le budget total ou retirez une carte du panier.'); return; }
+  const b=S.bought.get(name)||{qty:0,price:o.price,offer:o};
+  b.qty++; b.price=o.price; b.offer=o; S.bought.set(name,b);
+  S.deck.set(name,(S.deck.get(name)||0)+1);
+  renderAll();
+  toast(`${name} ajouté au panier : ${eur(o.price)} estimés (${o.condition} ou mieux, ${o.lang}).`);
+}
+let toastTimer=null;
+function toast(msg){
+  let el=document.getElementById('toast');
+  if(!el){ el=document.createElement('div'); el.id='toast';
+    el.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#2a2439;border:1px solid var(--brass);color:var(--txt);padding:9px 14px;border-radius:9px;font-size:13px;z-index:99;max-width:92vw;text-align:center';
+    document.body.appendChild(el); }
+  el.textContent=msg; el.style.display='block';
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.style.display='none',3200);
+}
+function openDialog(title,bodyHTML,footHTML,wide){
+  const d=document.getElementById('dlg'); if(d.classList) d.classList[wide?'add':'remove']('wide');
+  document.getElementById('dlgTitle').textContent=title;
+  document.getElementById('dlgBody').innerHTML=bodyHTML;
+  document.getElementById('dlgFoot').innerHTML=footHTML;
+  document.getElementById('dlg').showModal();
+}
+
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('[data-toggle],[data-act],[data-color],[data-cmode],[data-view],[data-gsrc],[data-node],[data-card]');
+  if(!t) return;
+
+  if(t.dataset.toggle){ document.getElementById(t.dataset.toggle).classList.toggle('open'); return; }
+  if(t.dataset.color!==undefined&&t.dataset.color){
+    const c=t.dataset.color;
+    if(S.colors.has(c)) S.colors.delete(c); else S.colors.add(c);
+    S.limitB=PAGE; renderAll(); return;
+  }
+  if(t.dataset.cmode){ S.colorMode=t.dataset.cmode; S.limitB=PAGE; renderAll(); return; }
+  if(t.dataset.view){ S.view=t.dataset.view; renderAll(); return; }
+  if(t.dataset.gsrc){ S.graphSource=t.dataset.gsrc; S.focusNode=null; renderD(); return; }
+  if(t.dataset.node){ S.focusNode=S.focusNode===t.dataset.node?null:t.dataset.node; renderD(); return; }
+
+  const act=t.dataset.act, name=t.dataset.name;
+  if(act==='inc'){ S.collection.set(name,(S.collection.get(name)||0)+1); renderAll(); return; }
+  if(act==='dec'){ const q=(S.collection.get(name)||0)-1; if(q<=0) S.collection.delete(name); else S.collection.set(name,q); renderAll(); return; }
+  if(act==='toDeck'){ addToDeck(name); return; }
+  if(act==='fromDeck'){ removeFromDeck(name); return; }
+  if(act==='buy'){ buyCard(name); return; }
+  if(act==='setCmd'){ S.commander=name; renderAll(); return; }
+  if(act==='closeDetail'){ S.selected=null; renderAll(); return; }
+  if(act==='clearFocus'){ S.focusNode=null; renderD(); return; }
+  if(act==='graphToF'){
+    document.getElementById('secF').classList.add('open'); renderF();
+    document.getElementById('secF').scrollIntoView({behavior:'smooth',block:'start'}); return;
+  }
+  if(act==='fiche'){ openCardModal(name); return; }
+  if(act==='focusNodeFrom'){
+    S.focusNode=t.dataset.node2;
+    document.getElementById('secD').classList.add('open'); renderD(); renderF();
+    document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
+  }
+  if(act==='toggleImages'){ S.images=!S.images; if(S.images) S.imagesFailed=false; renderAll(); return; }
+  if(act==='toggleImplicit'){ S.showImplicit=!S.showImplicit; renderD(); return; }
+  if(act==='allColors'){ S.colors=new Set(['W','U','B','R','G','C']); S.limitB=PAGE; renderAll(); return; }
+  if(act==='noColors'){ S.colors=new Set(); S.limitB=PAGE; renderAll(); return; }
+  if(act==='focusCard'){
+    const c=find(name);
+    S.graphSource='collection'; S.focusNode=c.an.edges.length?c.an.edges[0].to:null;
+    document.getElementById('secD').classList.add('open'); renderD();
+    document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
+  }
+  if(act==='clearDeck'){
+    openDialog('Vider le deck','<p>Les cartes retournent dans la collection. Les achats du panier sont annulés.</p>',
+      '<button class="btn" value="cancel">Annuler</button><button class="btn danger" id="okClear" value="ok">Vider le deck</button>');
+    document.getElementById('okClear').onclick=()=>{ S.deck.clear(); S.bought.clear(); S.commander=null; setTimeout(renderAll,10); };
+    return;
+  }
+  if(act==='wipe'){
+    openDialog('Vider la collection',
+      `<p>Cette action supprime les <b>${collectionCards().reduce((n,e)=>n+e.qty,0)} exemplaires</b> de la collection ainsi que le deck en cours. Elle est irréversible.</p>`,
+      '<button class="btn" value="cancel">Annuler</button><button class="btn danger" id="okWipe" value="ok">Tout supprimer</button>');
+    document.getElementById('okWipe').onclick=()=>{ S.collection.clear(); S.deck.clear(); S.bought.clear(); S.commander=null; setTimeout(renderAll,10); };
+    return;
+  }
+  if(act==='import'){
+    openDialog('Importer une liste MTGO',
+      `<p class="small muted">Une carte par ligne, au format « 4 Sol Ring ». Les en-têtes (Deck, Sideboard, Commander), les commentaires et les codes d'édition entre parenthèses sont ignorés. Les cartes absentes de la base embarquée sont créées puis complétées.</p>
+       <div class="row" style="gap:8px;align-items:center">
+         <label class="btn" for="impFile" style="margin:0;cursor:pointer">Choisir un fichier…</label>
+         <input id="impFile" type="file" accept=".txt,.dec,.dek,.mwDeck,.cod,text/plain" multiple style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+         <span class="small muted" id="impInfo">ou déposez-le sur la zone ci-dessous, ou collez la liste</span>
+       </div>
+       <textarea id="imp" placeholder="1 Sol Ring&#10;1 Rhystic Study&#10;4 Lightning Bolt"></textarea>
+       <label class="row small" style="gap:6px"><input type="checkbox" id="impEnrich" checked> Compléter les cartes inconnues via Scryfall (nécessite une connexion)</label>`,
+      '<button class="btn" value="cancel">Annuler</button><button class="btn pri" id="okImp" value="ok">Importer</button>');
+    const ta=document.getElementById('imp'), info=document.getElementById('impInfo');
+    async function lireFichiers(files){
+      info.textContent=`Lecture de ${files.length} fichier(s)…`;
+      const parts=[];
+      for(const f of files){
+        let txt='';
+        try{
+          txt=await f.text();
+          // les exports anciens sont parfois en Windows-1252 : on relit si le décodage a échoué
+          if(txt.indexOf('\uFFFD')>=0){
+            try{ txt=new TextDecoder('windows-1252').decode(await f.arrayBuffer()); }catch(e){}
+          }
+        }catch(e){ info.textContent=`Impossible de lire « ${f.name} ».`; return; }
+        parts.push(txt);
+      }
+      const ajout=parts.join('\n');
+      ta.value = ta.value.trim() ? ta.value.replace(/\s*$/,'\n')+ajout : ajout;
+      const n=parseMtgoList(ta.value).length;
+      info.textContent=`${files.map(f=>f.name).join(', ')} · ${n} carte(s) détectée(s)`;
+    }
+    document.getElementById('impFile').addEventListener('change',ev=>{
+      const fs=[...ev.target.files]; if(fs.length) lireFichiers(fs); });
+    ta.addEventListener('dragover',ev=>{ ev.preventDefault(); ta.style.borderColor='var(--brass)'; });
+    ta.addEventListener('dragleave',()=>{ ta.style.borderColor=''; });
+    ta.addEventListener('drop',ev=>{ ev.preventDefault(); ta.style.borderColor='';
+      const fs=[...((ev.dataTransfer&&ev.dataTransfer.files)||[])];
+      if(fs.length) lireFichiers(fs); else {
+        const t2=ev.dataTransfer&&ev.dataTransfer.getData('text');
+        if(t2) ta.value=ta.value.trim()?ta.value+'\n'+t2:t2;
+      } });
+    document.getElementById('okImp').onclick=()=>{
+      const txt=document.getElementById('imp').value;
+      const wantEnrich=document.getElementById('impEnrich').checked;
+      const entries=parseMtgoList(txt);
+      let known=0,created=0,qty=0; const fresh=[];
+      entries.forEach(e=>{
+        let c=find(e.name);
+        if(!c){ c=registerCard(buildCard(e.name,'—','Inconnu',0,'')); c.unknown=true; created++; fresh.push(c.name); }
+        else known++;
+        S.collection.set(c.name,(S.collection.get(c.name)||0)+e.qty); qty+=e.qty;
+      });
+      setTimeout(()=>{
+        S.limitB=PAGE; renderAll();
+        toast(`${entries.length} ligne(s) lues · ${qty} exemplaires · ${known} carte(s) déjà connues · ${created} créée(s).`);
+        if(wantEnrich&&fresh.length) completeUnknown(fresh);
+      },10);
+    };
+    return;
+  }
+  if(act==='enrich'){
+    completeUnknown(collectionCards().filter(e=>e.card.unknown).map(e=>e.card.name));
+    return;
+  }
+  if(act==='moreB'){ S.limitB+=PAGE; renderB(); return; }
+  if(act==='addCard'){
+    openDialog('Ajouter une carte',
+      `<div class="field"><label class="lab" for="addN">Carte</label>
+        <input id="addN" list="dbList" placeholder="Commencez à taper un nom…">
+        <datalist id="dbList">${DB.slice(0,1200).map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist></div>
+       <div class="field"><label class="lab" for="addQ">Exemplaires</label><input id="addQ" type="number" min="1" value="1" style="width:90px"></div>`,
+      '<button class="btn" value="cancel">Annuler</button><button class="btn pri" id="okAdd" value="ok">Ajouter</button>');
+    document.getElementById('okAdd').onclick=()=>{
+      const nm=document.getElementById('addN').value.trim(), q=parseInt(document.getElementById('addQ').value,10)||1;
+      const c=find(nm);
+      setTimeout(()=>{ if(c){ S.collection.set(c.name,(S.collection.get(c.name)||0)+q); renderAll(); toast(`${c.name} ×${q} ajouté.`);} else toast(`« ${nm} » est absent de la base. Vérifiez l'orthographe exacte.`); },10);
+    };
+    return;
+  }
+  if(act==='wants'){
+    const lines=[...S.bought.entries()].filter(([,b])=>b.qty>0).map(([n,b])=>`${b.qty} ${n}`).join('\n');
+    openDialog('Liste de wants Cardmarket',
+      `<p class="small muted">À coller dans « Wants list → Ajouter des cartes » sur Cardmarket. Une ligne par carte, quantité puis nom anglais.</p>
+       <textarea readonly>${esc(lines)}</textarea>
+       <div class="small">Filtres à appliquer sur place : état ${esc(S.budget.condition)} ou mieux, langue ${esc((CM_LANGS.find(l=>l[0]===S.budget.lang)||['','Indifférente'])[1])}, vendeur ${esc((SELLER_TYPES.find(t2=>t2[0]===S.budget.sellerType)||['','Indifférent'])[1])}.</div>
+       <a class="btn" href="https://www.cardmarket.com/fr/Magic/Wants" target="_blank" rel="noopener">Ouvrir mes wants lists ↗</a>`,
+      '<button class="btn" value="ok">Fermer</button>');
+    return;
+  }
+  if(act==='exportDeck'){
+    const lines=deckEntries().map(e=>`${e.qty} ${e.card.name}`).join('\n');
+    openDialog('Exporter le deck',`<textarea readonly>${esc(lines||'')}</textarea>
+      <div class="small muted">Format MTGO, prêt à être copié.</div>`,'<button class="btn" value="ok">Fermer</button>');
+    return;
+  }
+  if(t.dataset.card){
+    const nm=t.dataset.card, ctx=t.dataset.ctx||'collection';
+    if(S.selected===nm&&S.selectedCtx===ctx){ S.selected=null; } else { S.selected=nm; S.selectedCtx=ctx; }
+    renderAll(); return;
+  }
+});
+
+function withFocus(fn){
+  const a=document.activeElement, id=a&&a.id;
+  let pos=null; try{ pos=a&&a.selectionStart; }catch(e){}
+  fn();
+  if(id){ const n=document.getElementById(id);
+    if(n){ n.focus(); if(pos!=null){ try{ n.setSelectionRange(pos,pos); }catch(e){} } } }
+}
+document.addEventListener('input',ev=>{
+  const t=ev.target;
+  if(t.id==='q'){ S.search=t.value; S.limitB=PAGE; withFocus(()=>{renderB();renderC();renderD();renderF();renderTop();}); return; }
+  if(t.dataset.cust){ const k=t.dataset.cust;
+    S.custom[k]=k==='commander'?t.value==='1':(parseInt(t.value,10)||0); withFocus(renderAll); return; }
+  if(t.dataset.lim){ S.custom.colorLimits[t.dataset.lim][t.dataset.side]=parseInt(t.value,10)||0; withFocus(renderE); return; }
+  if(t.dataset.bud){ const k=t.dataset.bud;
+    S.budget[k]=(k==='total'||k==='perCard')?(parseFloat(t.value)||0):t.value; withFocus(()=>{renderF();renderTop();}); return; }
+});
+document.addEventListener('change',ev=>{
+  const t=ev.target;
+  if(t.dataset.act==='format'){ S.format=t.value;
+    if(t.value==='perso'){ S.custom.size=S.custom.size||100; } renderAll(); return; }
+  if(t.dataset.act==='sort'){ S.sort=t.value; S.limitB=PAGE; renderB(); return; }
+  if(t.dataset.bud){ const k=t.dataset.bud;
+    S.budget[k]=(k==='total'||k==='perCard')?(parseFloat(t.value)||0):t.value; renderF(); renderTop(); return; }
+  if(t.dataset.act==='typeFilter'){ S.typeFilter=t.value; S.limitB=PAGE; renderB(); renderC(); renderD(); renderF(); return; }
+});
+
+renderAll();
+</script>
+</body>
+</html>
