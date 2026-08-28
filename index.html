@@ -1112,8 +1112,7 @@ function renderB(){
       ? `<div class="grid">${page.map(e=>cardTile(e,'collection')).join('')}</div>`
       : `<div class="list">${page.map(e=>cardRow(e,'collection')).join('')}</div>`)
       : `<div class="empty">Aucune carte ne passe les filtres. Élargissez les couleurs en section A ou effacez la recherche.</div>`}
-    ${rest>0?`<div style="text-align:center;margin-top:10px"><button class="btn" data-act="moreB">Afficher ${Math.min(PAGE,rest)} cartes de plus (${rest} restantes)</button></div>`:''}
-    ${S.selectedCtx==='collection'&&S.selected?detailPanel(find(S.selected),'collection'):''}`;
+    ${rest>0?`<div style="text-align:center;margin-top:10px"><button class="btn" data-act="moreB">Afficher ${Math.min(PAGE,rest)} cartes de plus (${rest} restantes)</button></div>`:''}`;
   document.getElementById('hintB').textContent=`${shown}/${total} ex.`;
   if(S.view==='grid') setTimeout(()=>queueImages(page.map(e=>e.card)),0);
 }
@@ -1362,56 +1361,6 @@ function partnersFor(card,pool){
     const s=synergyBetween(card,o); if(s.length) res.push({card:o,links:s}); });
   return res.sort((a,b)=>b.links.length-a.links.length);
 }
-function detailPanel(card,ctx){
-  if(!card) return '';
-  const deck=deckEntries().map(e=>e.card);
-  const inDeckPartners=partnersFor(card,deck).slice(0,6);
-  const collPartners=partnersFor(card,filtered().map(e=>e.card).filter(c=>!S.deck.has(c.name)).slice(0,700)).slice(0,6);
-  const abil=card.an.abilities;
-  const role=[...card.cats].map(c=>CATLABEL[c]||c);
-  const why=[];
-  if(card.cats.has('ramp')) why.push('accélère la production de mana, ce qui avance toute la courbe');
-  if(card.cats.has('pioche')) why.push('renouvelle la main : c\'est la ressource qui empêche le deck de s\'essouffler');
-  if(card.cats.has('removal')) why.push('répond aux menaces adverses');
-  if(card.cats.has('tuteurs')) why.push('va chercher la pièce manquante et rend le deck consistant');
-  if(card.cats.has('jetons')) why.push('multiplie les corps, donc les déclencheurs à l\'arrivée en jeu et au sacrifice');
-  if(card.cats.has('blink')) why.push('réutilise les effets d\'arrivée en jeu');
-  if(card.cats.has('protection')) why.push('protège l\'axe principal du deck');
-  if(card.cats.has('sacrifice')) why.push('transforme les créatures en ressource');
-  if(!why.length) why.push('apporte un effet ponctuel : à évaluer selon le reste de la liste');
-  return `<div class="detail">
-    ${S.images&&(card.imgN||card.img)?`<img class="dimg" src="${esc(card.imgN||card.img)}" alt="${esc(card.name)}" loading="lazy">`:''}
-    <div class="row" style="align-items:flex-start">
-      <div><h3>${esc(card.name)}</h3>
-        <div class="small muted">${esc(card.type)} · CMC ${card.cmc} · ${eur(card.price)}</div></div>
-      <div class="costs" style="margin-left:auto">${manaHTML(card)}</div>
-    </div>
-    <div class="chips">${role.map(r=>`<span class="chip on">${r}</span>`).join('')}</div>
-    <div class="otext">${esc(card.text.replace(/ \/\/ /g,'\n'))}</div>
-    <div class="lab">Pourquoi elle compte</div>
-    <div class="small">Elle ${why.join(', et ')}.</div>
-    <div class="lab" style="margin-top:8px">Capacités extraites</div>
-    ${abil.length?abil.map(a=>`<div class="arc">${a.from.map(f=>esc(NODE[f].label)).join(' + ')} → <b>${a.to.map(t=>esc(NODE[t].label)).join(', ')}</b> <span class="muted">(${a.kind}${a.scopeTrig==='adv'?', côté adverse':''})</span></div>`).join(''):'<div class="arc muted">aucune capacité reconnue</div>'}
-    <div class="lab" style="margin-top:8px">Interactions dans le deck</div>
-    ${inDeckPartners.length?inDeckPartners.map(p=>`<div class="arc"><b>${esc(p.card.name)}</b> — ${p.links.map(l=>(l.dir==='ab'?'fournit ':'reçoit ')+NODE[l.concept].label.toLowerCase()).join(', ')}</div>`).join('')
-      :'<div class="arc muted">rien dans le deck ne se branche encore dessus</div>'}
-    <div class="lab" style="margin-top:8px">À ajouter depuis la collection</div>
-    ${collPartners.length?collPartners.map(p=>`<div class="arc"><b>${esc(p.card.name)}</b> — ${p.links.map(l=>NODE[l.concept].label.toLowerCase()).join(', ')}
-      <button class="btn sm" data-act="toDeck" data-name="${esc(p.card.name)}">Ajouter</button></div>`).join('')
-      :'<div class="arc muted">aucune carte compatible dans la collection filtrée</div>'}
-    <div class="row" style="margin-top:10px">
-      ${ctx==='deck'
-        ? `<button class="btn" data-act="fromDeck" data-name="${esc(card.name)}">Retirer du deck</button>
-           ${card.isLegendaryCreature&&fmt().commander?`<button class="btn" data-act="setCmd" data-name="${esc(card.name)}">Désigner commandant</button>`:''}`
-        : `<button class="btn pri" data-act="toDeck" data-name="${esc(card.name)}">Ajouter au deck</button>`}
-      <button class="btn" data-act="fiche" data-name="${esc(card.name)}">Voir en grand</button>
-      <button class="btn" data-act="focusCard" data-name="${esc(card.name)}">Voir dans le graphe</button>
-      <a class="btn" href="${esc(cmLink(card))}" target="_blank" rel="noopener">Cardmarket ↗</a>
-      <button class="btn sm" data-act="closeDetail">Fermer</button>
-    </div>
-  </div>`;
-}
-
 /* =====================================================================
    13. SECTION E — deck
    ===================================================================== */
@@ -1649,8 +1598,7 @@ function renderE(){
       <div class="group"><h4>${t} <span class="small muted">${grouped[t].reduce((a,e)=>a+e.qty,0)}</span></h4>
       ${S.view==='grid'?`<div class="grid">${grouped[t].map(e=>cardTile(e,'deck')).join('')}</div>`
                        :`<div class="list">${grouped[t].map(e=>cardRow(e,'deck')).join('')}</div>`}</div>`).join('')
-      :'<div class="empty">Le deck est vide. Ajoutez des cartes depuis la collection (▲) ou depuis les suggestions en section F.</div>'}
-    ${S.selectedCtx==='deck'&&S.selected?detailPanel(find(S.selected),'deck'):''}`;
+      :'<div class="empty">Le deck est vide. Ajoutez des cartes depuis la collection (▲) ou depuis les suggestions en section F.</div>'}`;
   document.getElementById('hintE').textContent=`${n}/${f.size}`;
   if(S.view==='grid') setTimeout(()=>queueImages(entries.map(e=>e.card)),0);
 }
@@ -2362,7 +2310,6 @@ document.addEventListener('click',ev=>{
     const c=find(S.commander); if(!c) return;
     S.colors=new Set(c.identity.length?[...c.identity,'C']:['C']);
     S.limitB=PAGE; renderAll(); toast(`Filtres de couleur alignés sur ${c.name}.`); return; }
-  if(act==='closeDetail'){ S.selected=null; renderAll(); return; }
   if(act==='clearFocus'){ S.focusNode=null; renderD(); return; }
   if(act==='graphToF'){
     document.getElementById('secF').classList.add('open'); renderF();
@@ -2463,11 +2410,7 @@ document.addEventListener('click',ev=>{
       <div class="small muted">Format MTGO, prêt à être copié.</div>`,'<button class="btn" value="ok">Fermer</button>');
     return;
   }
-  if(t.dataset.card){
-    const nm=t.dataset.card, ctx=t.dataset.ctx||'collection';
-    if(S.selected===nm&&S.selectedCtx===ctx){ S.selected=null; } else { S.selected=nm; S.selectedCtx=ctx; }
-    renderAll(); return;
-  }
+  if(t.dataset.card){ openCardModal(t.dataset.card); return; }
 });
 
 function withFocus(fn){
