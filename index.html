@@ -91,7 +91,12 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .seg button{background:transparent;border:0;padding:6px 11px;font-size:13px;color:var(--dim)}
 .seg button[aria-pressed=true]{background:var(--panel2);color:var(--txt);box-shadow:inset 0 -2px 0 var(--brass)}
 
-/* pastilles de mana */
+/* symboles de mana officiels, servis par Scryfall ; repli sur des pastilles dessinées en CSS */
+.msym{width:20px;height:20px;min-width:20px;min-height:20px;flex:0 0 auto;object-fit:contain;
+  display:inline-block;vertical-align:-4px;border-radius:99px}
+.msym.sm{width:15px;height:15px;min-width:15px;min-height:15px;vertical-align:-2px}
+.msym.lg{width:30px;height:30px;min-width:30px;min-height:30px;vertical-align:-7px}
+/* pastilles de mana (repli) */
 .mana{
   width:24px;height:24px;border-radius:99px;display:grid;place-items:center;
   font-family:var(--display);font-weight:700;font-size:13px;color:#1a1526;
@@ -101,7 +106,14 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .mana.R{background:var(--R)} .mana.G{background:var(--G)} .mana.C{background:var(--C)}
 .mana.gen{background:#c8c3d4}
 .mana.sm{width:17px;height:17px;font-size:10px}
-.mana-btn{border:2px solid transparent;padding:2px;border-radius:99px;background:transparent;line-height:0}
+.mana-btn{width:40px;height:40px;padding:2px;border:2px solid transparent;border-radius:99px;
+  background:transparent;line-height:0;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+/* le symbole est peint en fond : il remplit le bouton sans dépendre du dimensionnement
+   des images remplacées, qui variait selon le navigateur */
+.mana-btn .symbg{width:100%;height:100%;display:block;border-radius:99px;
+  background-size:contain;background-position:center;background-repeat:no-repeat}
+.mana-btn img.msym, .mana-btn span.mana{
+  width:100%;height:100%;min-width:0;min-height:0;vertical-align:middle;font-size:19px}
 .mana-btn[aria-pressed=true]{border-color:var(--brass);background:rgba(211,164,65,.16)}
 .mana-btn[aria-pressed=false]{opacity:.42;filter:saturate(.5)}
 
@@ -879,14 +891,52 @@ function aAcheter(){
 /* =====================================================================
    7. RENDU — pastilles, tuiles
    ===================================================================== */
+/* Les URL des symboles ne sont pas devinées : elles viennent de l'endpoint symbology
+   de Scryfall, qui donne un svg_uri par symbole. Tant qu'il n'a pas répondu,
+   ou s'il échoue, l'atelier garde ses pastilles dessinées en CSS. */
+let SYMS=null;
+async function loadSymbology(){
+  if(typeof fetch!=='function'||SYMS) return;
+  try{
+    const r=await fetch('https://api.scryfall.com/symbology');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    const m={};
+    (j.data||[]).forEach(x=>{ if(x.symbol&&x.svg_uri) m[x.symbol]=x.svg_uri; });
+    if(!Object.keys(m).length) throw new Error('réponse vide');
+    SYMS=m; renderAll();
+  }catch(err){ /* pastilles CSS conservées */ }
+}
+function pipHTML(inner,taille){
+  const code=String(inner).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const generique=/^\d+$|^X$/.test(code);
+  const fb=generique?'gen':('WUBRGC'.includes(code)?code:(code.split('').find(c=>'WUBRG'.includes(c))||'gen'));
+  const txt=generique?code:(fb==='gen'?code:fb);
+  return {fb,txt,cls:'mana '+fb+(taille==='sm'?' sm':'')};
+}
+function symBg(inner){
+  const p=pipHTML(inner);
+  const uri=SYMS&&SYMS['{'+String(inner).toUpperCase()+'}'];
+  return uri
+    ? `<span class="symbg" style="background-image:url('${esc(uri)}')" role="img" aria-label="${esc(inner)}"></span>`
+    : `<span class="${p.cls}">${esc(p.txt)}</span>`;
+}
+function symIcon(inner,taille){
+  const p=pipHTML(inner,taille);
+  const uri=SYMS&&SYMS['{'+String(inner).toUpperCase()+'}'];
+  if(!uri) return `<span class="${p.cls}">${esc(p.txt)}</span>`;
+  const cls='msym'+(taille?' '+taille:'');
+  return `<img class="${cls}" src="${esc(uri)}" alt="${esc(inner)}" title="{${esc(inner)}}"
+    loading="lazy" data-fb="${p.fb}" data-sz="${taille||''}" data-txt="${esc(p.txt)}" onerror="manaFb(this)">`;
+}
+function manaFb(img){
+  const sz=img.dataset.sz==='sm'?' sm':'';
+  img.outerHTML=`<span class="mana ${img.dataset.fb}${sz}">${img.dataset.txt}</span>`;
+}
 function manaHTML(card,sm){
-  const cls=sm?' sm':'';
-  if(!card.symbols.length) return `<span class="mana gen${cls}">—</span>`;
-  return card.symbols.map(s=>{
-    const i=s.slice(1,-1);
-    const col='WUBRGC'.includes(i)?i:(/^\d+$|^X$/.test(i)?'gen':(i.split('/').find(p=>'WUBRG'.includes(p))||'gen'));
-    return `<span class="mana ${col}${cls}">${esc(/^\d+$|^X$/.test(i)?i:(col==='gen'?i:col))}</span>`;
-  }).join('');
+  const t=sm?'sm':'';
+  if(!card.symbols.length) return `<span class="mana gen${sm?' sm':''}">—</span>`;
+  return card.symbols.map(x=>symIcon(x.slice(1,-1),t)).join('');
 }
 function stripeColor(card){
   const id=card.identity;
@@ -901,8 +951,7 @@ function cardTile(e,ctx){
   return `<div class="cardT ${withImg?'withimg':''} ${sel?'sel':''}" data-card="${esc(c.name)}" data-ctx="${ctx}">
     ${withImg?'':`<span class="stripe" style="background:${stripeColor(c)}"></span>`}
     ${withImg
-      ? `<div class="imgwrap"><img class="cimg" src="${esc(c.img)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.remove()">
-           ${c.cmc?`<span class="badge">CMC ${c.cmc}</span>`:''}</div>
+      ? `<div class="imgwrap"><img class="cimg" src="${esc(c.img)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.remove()"></div>
          <div class="cname">${esc(c.name)}</div>`
       : `<div style="display:flex;gap:4px;align-items:flex-start">
           <div class="cname">${esc(c.name)}</div>
@@ -963,7 +1012,7 @@ function renderA(){
       </div>
       <div class="scroll" style="margin-top:8px"><table class="tbl"><thead><tr><th>Couleur</th><th>Min</th><th>Max</th></tr></thead><tbody>
       ${'WUBRG'.split('').filter(c=>S.colors.has(c)).map(c=>`<tr>
-        <td><span class="mana sm ${c}">${c}</span></td>
+        <td>${symIcon(c)}</td>
         <td><input id="lim-${c}-min" type="number" min="0" max="250" value="${S.custom.colorLimits[c].min}" data-lim="${c}" data-side="min" style="width:70px"></td>
         <td><input id="lim-${c}-max" type="number" min="0" max="250" value="${S.custom.colorLimits[c].max}" data-lim="${c}" data-side="max" style="width:70px"></td></tr>`).join('')||'<tr><td colspan="3" class="muted small">Sélectionnez au moins une couleur.</td></tr>'}
       </tbody></table></div>
@@ -974,7 +1023,7 @@ function renderA(){
       <div class="field">
         <label class="lab">Couleurs</label>
         <div class="row" style="gap:2px">
-          ${cols.map(c=>`<button class="mana-btn" data-color="${c}" aria-pressed="${S.colors.has(c)}" aria-label="Couleur ${c}"><span class="mana ${c}">${c}</span></button>`).join('')}
+          ${cols.map(c=>`<button class="mana-btn" data-color="${c}" aria-pressed="${S.colors.has(c)}" aria-label="Couleur ${c}">${symBg(c)}</button>`).join('')}
           <button class="btn sm" data-act="allColors" style="margin-left:6px">Tout</button>
           <button class="btn sm" data-act="noColors">Aucune</button>
         </div>
@@ -1122,11 +1171,11 @@ function renderC(){
     </div>
     <h3 style="margin:14px 0 6px;font-size:15px">Répartition par couleur</h3>
     <div class="statgrid">
-      ${['W','U','B','R','G','C'].map(c=>`<div class="stat"><div class="v" style="color:var(--${c})">${fl.byColor[c]}</div><div class="k"><span class="mana sm ${c}">${c}</span> ${all.byColor[c]} au total</div></div>`).join('')}
+      ${['W','U','B','R','G','C'].map(c=>`<div class="stat"><div class="v" style="color:var(--${c})">${fl.byColor[c]}</div><div class="k">${symIcon(c,'sm')} ${all.byColor[c]} au total</div></div>`).join('')}
     </div>
     <h3 style="margin:14px 0 6px;font-size:15px">Types × couleurs (collection filtrée)</h3>
     <div class="scroll"><table class="tbl">
-      <thead><tr><th>Type</th>${['W','U','B','R','G','C'].map(c=>`<th><span class="mana sm ${c}">${c}</span></th>`).join('')}<th>Total</th><th>Collection</th></tr></thead>
+      <thead><tr><th>Type</th>${['W','U','B','R','G','C'].map(c=>`<th>${symIcon(c,'sm')}</th>`).join('')}<th>Total</th><th>Collection</th></tr></thead>
       <tbody>${TYPE_ORDER.filter(t=>all.byType[t]>0).map(t=>`<tr><td>${t}</td>
         ${['W','U','B','R','G','C'].map(c=>`<td class="${fl.matrix[t][c]?'':'muted'}">${fl.matrix[t][c]||'·'}</td>`).join('')}
         <td><b>${fl.byType[t]}</b></td><td class="muted">${all.byType[t]}</td></tr>`).join('')}</tbody>
@@ -1550,7 +1599,7 @@ function zoneCommandant(){
       <h3 style="font-size:16px">${esc(cmd.name)}</h3>
       <div class="small muted">${esc(cmd.type)} · CMC ${cmd.cmc}</div>
       <div class="row" style="gap:4px;margin:6px 0">
-        ${ident.map(c=>`<span class="mana sm ${c}">${c}</span>`).join('')}
+        ${ident.map(c=>symIcon(c,'sm')).join('')}
         <span class="small muted">identité couleur${horsIdentite?` · ${horsIdentite} carte(s) du deck en dehors`:' respectée par tout le deck'}</span>
       </div>
       <div class="row" style="gap:6px;margin-bottom:6px">
@@ -2551,6 +2600,7 @@ function pillSauvegarde(){
 const sauvegardeInitiale=chargerSauvegarde();
 if(!(sauvegardeInitiale&&restore(sauvegardeInitiale))) seedCollection();
 renderAll();
+loadSymbology();
 if(!storageOK) toast("Le stockage du navigateur est bloqué ici : les données ne survivront pas au rechargement. Téléchargez le fichier et ouvrez-le depuis votre disque pour activer la sauvegarde.");
 </script>
 </body>
