@@ -2527,6 +2527,51 @@ function openAdd(cible){
      <div id="addRes">${resultatsHTML('',cible)}</div>`,
     '<button class="btn" value="cancel">Fermer</button>',true);
 }
+/* Aperçu de la carte au survol d'un nom : le visuel suit le curseur. */
+let apercuEl=null, apercuNom=null;
+function refCarte(nom){ return `<span class="cardref" data-card-name="${esc(nom)}">${esc(nom)}</span>`; }
+function placerApercu(x,y){
+  if(!apercuEl) return;
+  const l=apercuEl.getBoundingClientRect?apercuEl.getBoundingClientRect():{width:236,height:330};
+  const w=l.width||236, h=l.height||330;
+  const dx=(x+18+w>window.innerWidth)?x-18-w:x+18;
+  const dy=Math.max(8,Math.min(y-h/2,window.innerHeight-h-8));
+  apercuEl.style.left=Math.max(8,dx)+'px'; apercuEl.style.top=dy+'px';
+}
+function contenuApercu(c){
+  const src=c.imgN||c.img;
+  return src
+    ? `<img src="${esc(src)}" alt="${esc(c.name)}">`
+    : `<div class="txt"><div class="n">${esc(c.name)}</div>
+        <div class="small muted">${esc(c.type)}${c.cmc?` · CMC ${c.cmc}`:''}</div>
+        <div class="costs" style="margin:4px 0">${manaHTML(c,true)}</div>
+        <div class="small" style="white-space:pre-line">${esc((c.text||'').replace(/ \/\/ /g,'\n').slice(0,260))}</div></div>`;
+}
+function montrerApercu(nom,x,y){
+  const c=find(nom); if(!c) return;
+  if(!apercuEl){ apercuEl=document.createElement('div'); apercuEl.id='cardPreview'; document.body.appendChild(apercuEl); }
+  apercuNom=c.name;
+  apercuEl.innerHTML=contenuApercu(c);
+  apercuEl.style.display='block';
+  placerApercu(x,y);
+  if(!c.img&&S.images&&!c.unknown) queueImages([c]);   // le visuel manquant est demandé à Scryfall
+}
+function majApercu(){
+  if(!apercuEl||apercuEl.style.display!=='block'||!apercuNom) return;
+  const c=find(apercuNom); if(c) apercuEl.innerHTML=contenuApercu(c);
+}
+function cacherApercu(){ if(apercuEl){ apercuEl.style.display='none'; apercuNom=null; } }
+document.addEventListener('mouseover',ev=>{
+  const t=ev.target.closest&&ev.target.closest('[data-card-name]');
+  if(t) montrerApercu(t.dataset.cardName,ev.clientX,ev.clientY);
+});
+document.addEventListener('mousemove',ev=>{
+  if(apercuEl&&apercuEl.style.display==='block') placerApercu(ev.clientX,ev.clientY);
+});
+document.addEventListener('mouseout',ev=>{
+  const t=ev.target.closest&&ev.target.closest('[data-card-name]');
+  if(t) cacherApercu();
+});
 let toastTimer=null;
 function toast(msg){
   let el=document.getElementById('toast');
