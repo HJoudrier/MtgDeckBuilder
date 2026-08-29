@@ -440,11 +440,13 @@ const NODES = [
   ['DEFAUSSE','Défausse','cimetiere'],
   ['SACRIFICE','Sacrifice','cimetiere'],
   ['MORT','Mort de créature','cimetiere'],
+  ['MORT_SOI','Mort de cette carte','cimetiere'],
   ['JETON','Jeton de créature','board'],
   ['MARQUEUR','Marqueur +1/+1','board'],
   ['COPIE','Copie','board'],
   ['BLINK','Blink','board'],
   ['ETB','Arrivée en jeu','board'],
+  ['ETB_SOI','Arrivée de cette carte','board'],
   ['TERRAIN','Terrain (landfall)','mana'],
   ['RAMP','Ramp','mana'],
   ['TRESOR','Trésor','mana'],
@@ -481,6 +483,8 @@ const NODE = {}; NODES.forEach((n,i)=>NODE[n[0]]={id:n[0],label:n[1],group:n[2],
 /* arcs "règles du jeu" : ce qu'un effet permet mécaniquement d'enchaîner */
 const IMPLICIT = [
   ['JETON','ETB'],['COPIE','ETB'],['BLINK','ETB'],['RECURSION','ETB'],['LANCEMENT','ETB'],
+  ['COPIE','ETB_SOI'],['BLINK','ETB_SOI'],['RECURSION','ETB_SOI'],['LANCEMENT','ETB_SOI'],
+  ['SACRIFICE','MORT_SOI'],['DESTRUCTION','MORT_SOI'],
   ['UNTAP','ENGAGEMENT'],['TRESOR','MANA'],['RAMP','MANA'],['TERRAIN','RAMP'],['MANA','LANCEMENT'],
   ['SACRIFICE','MORT'],['DESTRUCTION','MORT'],['MILL','RECURSION'],['DEFAUSSE','RECURSION'],
   ['MARQUEUR','BOOST'],['REDUCTION','LANCEMENT'],['RECURSION','LANCEMENT'],['ETB','SACRIFICE']
@@ -579,6 +583,80 @@ function matchAll(rules, s){
   for(const [c,re] of rules){ if(re.test(s) && !out.includes(c)) out.push(c); }
   return out;
 }
+/* Un déclencheur ne se résume pas à son concept : il porte un sujet, une portée
+   et souvent des restrictions. « quand cette créature arrive en jeu »,
+   « quand une créature de force 3 ou plus arrive » et « quand une créature arrive »
+   partagent le concept mais ne se branchent pas sur les mêmes cartes. */
+const SUJETS=[['creature',/creature/],['land',/\bland\b/],['artifact',/artifact/],['enchantment',/enchantment/],
+              ['token',/token/],['permanent',/permanent/],['spell',/spell/],['card',/\bcard\b/],['player',/player|opponent/]];
+function qualifieDeclencheur(clause,selfNames){
+  const q={portee:'tous',sujet:'',filtres:[],mode:'declencheur'};
+  if(/an opponent|each opponent|opponents|target player|that player|your opponents/.test(clause)) q.portee='adversaire';
+  else if(/you control|\byou\b|\byour\b/.test(clause)) q.portee='vous';
+  // « X ou une autre créature meurt » n'est pas un évènement propre à X
+  const nomme=/\bthis (creature|permanent|card|spell)\b/.test(clause)||selfNames.some(n=>n&&clause.includes(n));
+  if(nomme&&!/\banother\b|\bother\b/.test(clause)) q.portee='soi';
+  for(const [nom,re] of SUJETS) if(re.test(clause)){ q.sujet=nom; break; }
+  let m;
+  if((m=clause.match(/power (\d+) or (?:greater|more)/))) q.filtres.push({t:'force',op:'≥',v:+m[1]});
+  if((m=clause.match(/power (\d+) or less/)))            q.filtres.push({t:'force',op:'≤',v:+m[1]});
+  if((m=clause.match(/mana value (\d+) or (?:greater|more)/))) q.filtres.push({t:'cmc',op:'≥',v:+m[1]});
+  if((m=clause.match(/mana value (\d+) or less/)))            q.filtres.push({t:'cmc',op:'≤',v:+m[1]});
+  if(/nontoken/.test(clause)) q.filtres.push({t:'nonjeton'});
+  if(/\banother\b/.test(clause)) q.filtres.push({t:'autre'});
+  if(/\blegendary\b/.test(clause)) q.filtres.push({t:'legendaire'});
+  if(/first .{0,30}each turn|only once each turn/.test(clause)) q.filtres.push({t:'unefois'});
+  if((m=clause.match(/\b(goblin|zombie|elf|elves|spirit|dragon|angel|wizard|vampire|plant|insect|golem|drake|bird|human|cat|faerie|treasure)\b/)))
+    q.filtres.push({t:'type',v:m[1]});
+  return q;
+}
+function qualifieProduction(clause,card){
+  const q={portee:'vous',jeton:false,force:null,cmc:null,types:[]};
+  if(/each opponent|target opponent|opponents|target player/.test(clause)) q.portee='adversaire';
+  if(/token/.test(clause)) q.jeton=true;
+  let m;
+  if((m=clause.match(/(\d+)\/(\d+)[^.]{0,40}token/))) q.force=+m[1];
+  if((m=clause.match(/\b(goblin|zombie|elf|spirit|dragon|angel|wizard|vampire|plant|insect|golem|drake|bird|human|cat|faerie|treasure)\b/)))
+    q.types.push(m[1]);
+  return q;
+}
+function libelleQual(q){
+  if(!q) return '';
+  const p={soi:'cette carte',vous:'vous ou vos permanentes',adversaire:'côté adverse',tous:'n\'importe qui'}[q.portee]||'';
+  const suj={creature:'créature',land:'terrain',artifact:'artefact',enchantment:'enchantement',token:'jeton',
+             permanent:'permanente',spell:'sort',card:'carte',player:'joueur'}[q.sujet]||'';
+  const f=(q.filtres||[]).map(x=>({force:`force ${x.op} ${x.v}`,cmc:`valeur de mana ${x.op} ${x.v}`,
+    nonjeton:'non-jeton',autre:'une autre',legendaire:'légendaire',unefois:'une fois par tour',
+    type:'type '+(x.v||'')}[x.t]||x.t));
+  if(q.mode==='cout') f.unshift('payé en coût');
+  return [suj,p,...f].filter(Boolean).join(', ');
+}
+/* Le producteur satisfait-il les restrictions du déclencheur ?
+   0 = incompatible, 1 = certain, valeur intermédiaire = plausible sans garantie. */
+function compat(prod,trig){
+  const q=trig.q||{}, p=prod.q||{};
+  if(q.portee==='soi') return 0;                       // l'évènement ne concerne que la carte elle-même
+  if(q.portee==='adversaire'&&p.portee!=='adversaire') return 0;
+  if(q.portee==='vous'&&p.portee==='adversaire') return 0;
+  let k=1;
+  for(const f of (q.filtres||[])){
+    if(f.t==='nonjeton'&&p.jeton) return 0;            // un jeton ne déclenche pas « non-jeton »
+    if(f.t==='force'&&p.force!=null){
+      if(f.op==='≥'&&p.force<f.v) return 0;
+      if(f.op==='≤'&&p.force>f.v) return 0;
+    } else if(f.t==='cmc'&&p.jeton){
+      if(f.op==='≥'&&f.v>0) return 0;                  // un jeton a une valeur de mana nulle
+    } else if(f.t==='cmc'&&p.cmc!=null){
+      if(f.op==='≥'&&p.cmc<f.v) return 0;
+      if(f.op==='≤'&&p.cmc>f.v) return 0;
+    } else if(f.t==='type'){
+      if(p.types&&p.types.length) { if(!p.types.some(t=>t.toLowerCase().startsWith(f.v.slice(0,4)))) return 0; }
+      else k*=0.5;
+    } else if(f.t==='force'||f.t==='cmc'){ k*=0.6; }   // restriction non vérifiable
+    else if(f.t==='unefois') k*=0.8;
+  }
+  return k;
+}
 function refineTriggers(list,clause){
   let out=[...list];
   if(out.includes('TERRAIN')) out=out.filter(c=>c!=='ETB');
@@ -632,10 +710,16 @@ function analyze(card){
           // « X ou une autre créature meurt » reste un point d'accroche, contrairement à « quand X meurt »
           const selfRef=(selfNames.some(n=>n&&tPart.includes(n))||/this creature|this permanent|this spell/.test(tPart))
                         && !/\banother\b|\bother\b/.test(tPart);
-          ctx={from:src.length?src:['STATIQUE'],scope:scopeOf(tPart),kind:granted?'octroyee':'declenchee',
-               hook:recurring&&(granted||!selfRef)};
+          const q=qualifieDeclencheur(tPart,selfNames);
+          if(selfRef) q.portee='soi';
+          // un évènement qui ne concerne que la carte elle-même a son propre nœud
+          const srcN=(src.length?src:['STATIQUE']).map(f=>
+            (selfRef&&f==='ETB')?'ETB_SOI':((selfRef&&f==='MORT')?'MORT_SOI':f));
+          ctx={from:srcN,scope:scopeOf(tPart),kind:granted?'octroyee':'declenchee',
+               hook:recurring&&(granted||!selfRef),q,pq:qualifieProduction(ePart,card)};
           if(src.length||eff.length)
-            abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:ctx.scope,scopeEff:scopeOf(ePart),text:body,hook:ctx.hook});
+            abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:ctx.scope,scopeEff:scopeOf(ePart),
+                            text:body,hook:ctx.hook,q,pq:ctx.pq});
           return;
         }
         const act = body.match(/^([^:]{1,70}):\s*(.+)$/);
@@ -652,18 +736,23 @@ function analyze(card){
           const sacOutlet=/sacrifice (?:a|an|another|two|three|x|\d)\b/.test(cost)
                           && !selfNames.some(n=>n&&cost.includes(n));
           const selfSac=/sacrifice/.test(cost)&&!sacOutlet;
-          ctx={from:src,scope:'self',kind:'activee',hook:false};
-          if(eff.length) abilities.push({kind:'activee',from:src,to:eff,scopeTrig:'self',scopeEff:scopeOf(eff0),text:body,sacOutlet,selfSac});
+          const q={portee:'vous',sujet:sacOutlet?'creature':(/discard/.test(cost)?'card':''),filtres:[],mode:'cout'};
+          ctx={from:src,scope:'self',kind:'activee',hook:false,q,pq:qualifieProduction(eff0,card)};
+          if(eff.length) abilities.push({kind:'activee',from:src,to:eff,scopeTrig:'self',scopeEff:scopeOf(eff0),
+                                         text:body,sacOutlet,selfSac,q,pq:ctx.pq});
           return;
         }
         const eff = refineEffects(matchAll(EFFECT_RULES,body),body);
         if(!eff.length) return;
         if(ctx && !/^[a-z ,]*(each|all|creatures you control|equipped|enchanted)/.test(body)){
-          abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:ctx.scope,scopeEff:scopeOf(body),text:body,hook:ctx.hook});
+          abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:ctx.scope,scopeEff:scopeOf(body),
+                          text:body,hook:ctx.hook,q:ctx.q,pq:qualifieProduction(body,card)});
           return;
         }
-        ctx={from:[isSpell?'LANCEMENT':'STATIQUE'],scope:'self',kind:isSpell?'sort':'statique',hook:false};
-        abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:'self',scopeEff:scopeOf(body),text:body,hook:false});
+        ctx={from:[isSpell?'LANCEMENT':'STATIQUE'],scope:'self',kind:isSpell?'sort':'statique',hook:false,
+             q:{portee:'vous',sujet:'',filtres:[],mode:isSpell?'sort':'statique'}};
+        abilities.push({kind:ctx.kind,from:ctx.from,to:eff,scopeTrig:'self',scopeEff:scopeOf(body),
+                        text:body,hook:false,q:ctx.q,pq:qualifieProduction(body,card)});
       });
     });
   });
@@ -671,22 +760,32 @@ function analyze(card){
   const edges=[];
   abilities.forEach(a=>a.from.forEach(f=>a.to.forEach(t=>{
     if(f===t) return;
-    edges.push({from:f,to:t,kind:a.kind,scope:a.scopeTrig,text:a.text});
+    edges.push({from:f,to:t,kind:a.kind,scope:a.scopeTrig,text:a.text,q:a.q,detail:libelleQual(a.q)});
   })));
 
-  const triggers = new Set(), produces = new Set();
+  const triggers=[], produces=[];
+  const qVide={portee:'vous',jeton:false,force:null,cmc:null,types:[]};
+  const ajouteT=(c,scope,q,mode)=>{ if(c==='STATIQUE'||c==='MANA') return;
+    triggers.push({c,scope,q:{...(q||{portee:'vous',sujet:'',filtres:[]}),mode:mode||(q&&q.mode)||'declencheur'}}); };
+  const ajouteP=(c,scope,q)=>produces.push({c,scope,q:{...qVide,...(q||{})}});
   abilities.forEach(a=>{
     const hooks = a.hook
       ? a.from
       : a.from.filter(f=>a.kind==='activee'&&((f==='SACRIFICE'&&a.sacOutlet)||f==='DEFAUSSE'));
-    hooks.forEach(f=>{ if(f!=='STATIQUE'&&f!=='MANA') triggers.add(f+'|'+a.scopeTrig); });
-    a.to.forEach(t=>produces.add(t+'|'+a.scopeEff));
-    // un exutoire à sacrifice fait mourir des créatures : c'est aussi une production d'évènement
-    if(a.kind==='activee'&&a.sacOutlet){ produces.add('SACRIFICE|self'); produces.add('MORT|self'); }
-    if(a.kind==='activee'&&a.selfSac&&/creature/i.test(card.type)) produces.add('MORT|self');
-    if(a.kind==='activee'&&a.from.includes('DEFAUSSE')) produces.add('DEFAUSSE|self');
+    hooks.forEach(f=>ajouteT(f,a.scopeTrig,a.q,a.kind==='activee'?'cout':'declencheur'));
+    a.to.forEach(t=>ajouteP(t,a.scopeEff,a.pq));
+    // un exutoire à sacrifice fait mourir des créatures : c'est une production d'évènement
+    if(a.kind==='activee'&&a.sacOutlet){
+      ajouteP('SACRIFICE','self',{types:['creature']});
+      ajouteP('MORT','self',{types:['creature']});
+    }
+    if(a.kind==='activee'&&a.selfSac&&/creature/i.test(card.type))
+      ajouteP('MORT','self',{force:card.force,cmc:card.cmc});
+    // se défausser pour payer un coût, c'est produire l'évènement « défausse »
+    if(a.kind==='activee'&&a.from.includes('DEFAUSSE')) ajouteP('DEFAUSSE','self',{});
   });
-  if(isPermanent) produces.add('ETB|self');
+  // la permanente qui arrive en jeu : on connaît son coût et, pour une créature, sa force
+  if(isPermanent) ajouteP('ETB','self',{jeton:false,force:card.force,cmc:card.cmc,types:card.sousTypes||[]});
   return {abilities,edges,triggers,produces,isSpell,isPermanent};
 }
 
@@ -729,6 +828,9 @@ function buildCard(name,cost,type,price,text){
   (card.text.match(/\{[^}]+\}/g)||[]).forEach(x=>x.slice(1,-1).split('/').forEach(pp=>{if('WUBRG'.includes(pp))idc.add(pp)}));
   if(/^basic land/i.test(card.type)) idc.clear();
   card.identity=[...idc];
+  const pt=(card.text||'').match(/(?:^|\s)(\d+)\/(\d+)(?![^.]{0,40}token)/);
+  card.force=pt?+pt[1]:null;   // approximation : la vraie force vient de Scryfall
+  card.sousTypes=((card.type||'').split('—')[1]||'').toLowerCase().split(/\s+/).filter(Boolean);
   card.an=analyze(card);
   card.cats=categories(card);
   const tf=String(card.type).split(' // ')[0];
@@ -812,7 +914,9 @@ const S={
   graphSource:'collection', showImplicit:true, focusNode:null,
   budget:{total:30,perCard:12,condition:'GD',lang:'any',sellerType:'any',country:'any'},
   selected:null, selectedCtx:'collection', limitB:200, enriching:false, images:true, imagesFailed:false,
-  edhrec:{slug:null,status:'idle',data:null,error:null}
+  edhrec:{slug:null,status:'idle',data:null,error:null},
+  csb:{sig:null,status:'idle',data:null,error:null},
+  csbRelay:''
 };
 'WUBRG'.split('').forEach(c=>S.custom.colorLimits[c]={min:0,max:99});
 
@@ -1200,7 +1304,7 @@ function buildGraph(cards){
     const k=e.from+'>'+e.to;
     if(!edges.has(k)) edges.set(k,{from:e.from,to:e.to,cards:new Map(),kinds:new Set()});
     const o=edges.get(k); o.kinds.add(e.kind);
-    if(!o.cards.has(c.name)) o.cards.set(c.name,e.text);
+    if(!o.cards.has(c.name)) o.cards.set(c.name,e.detail||'');
   }));
   const deg={}; NODES.forEach(n=>deg[n[0]]=0);
   edges.forEach(e=>{ deg[e.from]+=e.cards.size; deg[e.to]+=e.cards.size; });
@@ -1302,7 +1406,8 @@ function renderD(){
     if(!S.focusNode) return '';
     const inb=[],outb=[];
     g.edges.forEach(e=>{ if(e.to===S.focusNode) inb.push(e); if(e.from===S.focusNode) outb.push(e); });
-    const fmtList=(arr,dir)=>arr.length?arr.map(e=>`<div class="arc"><b>${esc(NODE[dir==='in'?e.from:e.to].label)}</b> — ${[...e.cards.keys()].slice(0,8).map(esc).join(', ')}</div>`).join(''):'<div class="arc muted">aucun</div>';
+    const fmtList=(arr,dir)=>arr.length?arr.map(e=>`<div class="arc"><b>${esc(NODE[dir==='in'?e.from:e.to].label)}</b> — ${
+      [...e.cards.entries()].slice(0,8).map(([n,d])=>esc(n)+(d?` <span class="muted">(${esc(d)})</span>`:'')).join(', ')}</div>`).join(''):'<div class="arc muted">aucun</div>';
     return `<div class="detail"><h3>${esc(NODE[S.focusNode].label)}</h3>
       <div class="small muted" style="margin-bottom:6px">Cliquez à nouveau sur le nœud pour désélectionner.</div>
       <div class="row" style="align-items:flex-start;gap:16px">
@@ -1339,21 +1444,24 @@ function renderD(){
 const EQUIV={RAMP:['TERRAIN'],TERRAIN:['RAMP'],JETON:['ETB'],COPIE:['ETB'],BLINK:['ETB'],
              RECURSION:['ETB'],TRESOR:['MANA'],MARQUEUR:['BOOST']};
 function feeds(concept){ return [concept,...(EQUIV[concept]||[])]; }
+function croise(prods,trigs,dir,out){
+  prods.forEach(p=>{ if(p.scope!=='self') return;
+    trigs.forEach(t=>{
+      if(t.scope!=='self'&&t.q.portee!=='adversaire') return;
+      if(!feeds(p.c).includes(t.c)) return;
+      const k=compat(p,t);
+      if(k>0) out.push({concept:t.c,dir,k,detail:libelleQual(t.q)});
+    });
+  });
+}
 function synergyBetween(a,b){
-  // ce que a produit et qui déclenche b, et inversement
+  // ce que a produit et qui déclenche b, et l'inverse, restrictions comprises
   const out=[];
-  a.an.produces.forEach(p=>{
-    const [c,sc]=p.split('|'); if(sc!=='self') return;
-    b.an.triggers.forEach(t=>{ const [c2,sc2]=t.split('|');
-      if(sc2==='self'&&feeds(c).includes(c2)) out.push({concept:c2,dir:'ab'}); });
-  });
-  b.an.produces.forEach(p=>{
-    const [c,sc]=p.split('|'); if(sc!=='self') return;
-    a.an.triggers.forEach(t=>{ const [c2,sc2]=t.split('|');
-      if(sc2==='self'&&feeds(c).includes(c2)) out.push({concept:c2,dir:'ba'}); });
-  });
-  const seen=new Set();
-  return out.filter(l=>{ const k=l.concept+l.dir; if(seen.has(k)) return false; seen.add(k); return true; });
+  croise(a.an.produces,b.an.triggers,'ab',out);
+  croise(b.an.produces,a.an.triggers,'ba',out);
+  const best=new Map();
+  out.forEach(l=>{ const c=l.concept+l.dir; if(!best.has(c)||best.get(c).k<l.k) best.set(c,l); });
+  return [...best.values()];
 }
 function partnersFor(card,pool){
   const res=[];
@@ -1445,9 +1553,10 @@ function ficheHTML(card){
   }
   if(!pourquoi.length) pourquoi.push("aucun branchement repéré avec le deck actuel : elle vaut surtout pour son effet propre");
 
+  const nomLien=l=>NODE[l.concept].label.toLowerCase()+(l.detail?` (${l.detail})`:'')+(l.k<1?' — sous réserve':'');
   const lien=p=>{
-    const donne=[...new Set(p.links.filter(l=>l.dir==='ab').map(l=>NODE[l.concept].label.toLowerCase()))];
-    const recoit=[...new Set(p.links.filter(l=>l.dir==='ba').map(l=>NODE[l.concept].label.toLowerCase()))];
+    const donne=[...new Set(p.links.filter(l=>l.dir==='ab').map(nomLien))];
+    const recoit=[...new Set(p.links.filter(l=>l.dir==='ba').map(nomLien))];
     const bouts=[];
     if(donne.length) bouts.push(`elle lui fournit ${donne.join(', ')}`);
     if(recoit.length) bouts.push(`elle en reçoit ${recoit.join(', ')}`);
@@ -1469,13 +1578,37 @@ function ficheHTML(card){
     </div>
     <div class="bloc"><h4>Ce qu'elle apporte au deck</h4>
       ${pourquoi.map(r=>`<div class="puce">${esc(r)}</div>`).join('')}</div>
+    ${(() => {
+      const cs=combosDe(card);
+      if(!cs.length) return '';
+      return `<div class="bloc"><h4>Combos répertoriés <span class="small muted">Commander Spellbook</span></h4>
+        ${cs.slice(0,4).map(c=>{
+          const manque=(c.manquantes||[]).filter(n=>norm(n)!==norm(card.name));
+          const complet=!c.manquantes||!c.manquantes.length;
+          return `<div class="arc" style="margin-bottom:6px">
+            <b>${esc(libelleCombo(c,card))}</b>
+            <div class="small ${complet?'':'muted'}">${complet
+              ? 'toutes les pièces sont dans le deck'
+              : (c.manquantes.some(n=>norm(n)===norm(card.name))
+                  ? `cette carte est la pièce manquante${manque.length?`, avec ${esc(manque.join(', '))}`:''}`
+                  : `il manque ${esc(c.manquantes.join(', '))}`)}</div>
+            ${c.description?`<div class="small muted">${esc(c.description.split('\n').slice(0,3).join(' '))}</div>`:''}
+            ${c.prerequis?`<div class="small muted">prérequis : ${esc(c.prerequis)}</div>`:''}
+            <a class="small" href="${esc(c.url)}" target="_blank" rel="noopener" style="color:var(--brass)">voir le combo ↗</a>
+          </div>`;
+        }).join('')}
+      </div>`;
+    })()}
     <div class="bloc"><h4>Interactions dans le graphe</h4>
       <div class="small muted" style="margin-bottom:5px">Cartes du deck</div>
       ${partD.length?partD.map(lien).join(''):'<div class="arc muted">aucune pour le moment</div>'}
       <div class="small muted" style="margin:8px 0 5px">Cartes de la collection filtrée</div>
       ${partC.length?partC.map(lien).join(''):'<div class="arc muted">aucune</div>'}</div>
     <div class="bloc"><h4>Capacités extraites</h4>
-      ${card.an.abilities.length?card.an.abilities.map(a=>`<div class="arc">${a.from.map(f=>esc(NODE[f].label)).join(' + ')} → <b>${a.to.map(t=>esc(NODE[t].label)).join(', ')}</b> <span class="muted">(${a.kind}${a.scopeTrig==='adv'?', côté adverse':''})</span></div>`).join('')
+      ${card.an.abilities.length?card.an.abilities.map(a=>{
+          const ql=libelleQual(a.q);
+          return `<div class="arc">${a.from.map(f=>esc(NODE[f].label)).join(' + ')}${ql?` <span class="muted">[${esc(ql)}]</span>`:''} → <b>${a.to.map(t=>esc(NODE[t].label)).join(', ')}</b> <span class="muted">(${a.kind}${a.scopeTrig==='adv'?', côté adverse':''})</span></div>`;
+        }).join('')
         :'<div class="arc muted">aucune capacité reconnue dans le texte</div>'}
       ${noeuds.length?`<div class="chips" style="margin-top:7px">${noeuds.map(n=>`<button class="chip" data-act="focusNodeFrom" data-node2="${n}">${esc(NODE[n].label)}</button>`).join('')}</div>
         <div class="small muted">Touchez un nœud pour l'isoler dans le graphe.</div>`:''}</div>`;
@@ -1491,6 +1624,44 @@ function openCardModal(name){
     `<button class="btn" value="ok">Fermer</button>`
   ].filter(Boolean).join('');
   openDialog(card.name,ficheHTML(card),actions,true);
+}
+function blocCombos(){
+  const e=S.csb;
+  if(e.status==='loading'&&!e.data) return `<div class="group"><h4>Combos connus</h4>
+    <div class="small muted">Interrogation de Commander Spellbook…</div></div>`;
+  if(e.status==='cors'||e.status==='error') return `<div class="group"><h4>Combos connus</h4>
+    <div class="small">${e.status==='cors'
+      ? `La requête n'atteint pas Commander Spellbook : leur serveur n'autorise pas les appels depuis une page tierce (règle CORS). Ce n'est pas un problème de votre côté, et rien ne peut le contourner depuis le navigateur seul.`
+      : `Commander Spellbook a répondu par une erreur (${esc(e.error||'')}).`}</div>
+    <div class="small muted" style="margin-top:6px">Deux issues : passer par un relais qui ajoute les en-têtes manquants, ou consulter le site directement. Un relais fait transiter la liste de votre deck par un tiers, et peut cesser de fonctionner sans préavis.</div>
+    <div class="row" style="gap:6px;margin-top:8px">
+      <input id="csbRelay" type="text" value="${esc(S.csbRelay)}" placeholder="URL d'un relais, ex. https://corsproxy.io/?url={url}" style="flex:1;min-width:220px">
+      <button class="btn sm" data-act="combos">Réessayer</button>
+      <a class="btn sm" href="https://commanderspellbook.com/" target="_blank" rel="noopener">Ouvrir le site ↗</a>
+    </div>
+    <div class="small muted" style="margin-top:4px">Le jeton <b>{url}</b> est remplacé par l'adresse de l'API, encodée. Laissez vide pour un appel direct.</div>
+  </div>`;
+  if(!e.data) return '';
+  const {assembles,presque}=e.data;
+  if(!assembles.length&&!presque.length) return `<div class="group"><h4>Combos connus</h4>
+    <div class="small muted">Aucun combo répertorié dans ce deck, ni à une carte près.</div>
+    <div class="row" style="margin-top:6px"><button class="btn sm" data-act="combos">Réinterroger</button></div></div>`;
+  return `<div class="group" style="border-color:#5a4780">
+    <h4>Combos connus <span class="small muted">Commander Spellbook · ${assembles.length} assemblé(s), ${presque.length} à une carte près</span></h4>
+    ${assembles.length?`<div class="list">${assembles.slice(0,6).map(c=>`
+      <div class="lrow" style="align-items:flex-start;flex-direction:column;gap:2px">
+        <div><b>${esc(c.cartes.join(' + '))}</b></div>
+        <div class="small">${c.produit.length?esc(c.produit.join(' · ')):'effet non détaillé'}
+          — <a href="${esc(c.url)}" target="_blank" rel="noopener" style="color:var(--brass)">détail ↗</a></div>
+      </div>`).join('')}</div>`:''}
+    ${presque.length?`<div class="small muted" style="margin:8px 0 4px">À une carte près :</div>
+      <div class="list">${presque.slice(0,6).map(c=>`
+        <div class="lrow" style="align-items:flex-start;flex-direction:column;gap:2px">
+          <div class="small">il manque <b>${esc(c.manquantes.join(', '))}</b> pour ${esc(c.cartes.join(' + '))}</div>
+          <div class="small muted">${c.produit.length?esc(c.produit.slice(0,3).join(' · ')):''}</div>
+        </div>`).join('')}</div>`:''}
+    <div class="row" style="margin-top:8px"><button class="btn sm" data-act="combos">Réinterroger</button></div>
+  </div>`;
 }
 function blocAchats(){
   const lignes=aAcheter();
@@ -1588,6 +1759,7 @@ function renderE(){
     </div>
     ${msgs.length?`<div class="warnbox"><b>À corriger</b><ul style="margin:5px 0 0 16px;padding:0">${msgs.slice(0,6).map(m=>`<li>${esc(m)}</li>`).join('')}</ul></div>`:`<div class="warnbox" style="border-color:#2f6b46;background:rgba(79,159,104,.1)">Le deck respecte les contraintes du format.</div>`}
     ${f.commander?zoneCommandant():''}
+    ${blocCombos()}
     ${blocAchats()}
     <h3 style="margin:12px 0 6px;font-size:15px">Courbe de mana</h3>
     ${histogram(cmcSplit,true)}
@@ -1601,6 +1773,7 @@ function renderE(){
       :'<div class="empty">Le deck est vide. Ajoutez des cartes depuis la collection (▲) ou depuis les suggestions en section F.</div>'}`;
   document.getElementById('hintE').textContent=`${n}/${f.size}`;
   if(S.view==='grid') setTimeout(()=>queueImages(entries.map(e=>e.card)),0);
+  scheduleCombos();
 }
 
 /* =====================================================================
@@ -1679,6 +1852,85 @@ async function loadEdhrec(force){
   }
   renderF();
 }
+// ---- Commander Spellbook : combos connus, assemblés ou à une carte près ----
+function deckSignature(){
+  return deckEntries().map(e=>e.card.name+'×'+e.qty).sort().join('|')+'||'+(S.commander||'');
+}
+function comboDepuisVariante(v){
+  const cartes=(v.uses||[]).map(u=>(u&&u.card&&(u.card.name||u.card))||u.cardName||'').filter(Boolean);
+  const produit=(v.produces||[]).map(x=>(x&&x.feature&&(x.feature.name||x.feature))||x.name||'').filter(Boolean);
+  return {id:v.id,cartes,produit,
+    description:v.description||'',
+    prerequis:v.otherPrerequisites||v.other_prerequisites||'',
+    mana:v.manaNeeded||v.mana_needed||'',
+    url:'https://commanderspellbook.com/combo/'+v.id+'/'};
+}
+let csbTimer=null;
+function scheduleCombos(){
+  if(typeof fetch!=='function') return;
+  const sig=deckSignature();
+  if(S.csb.sig===sig||S.csb.status==='loading') return;
+  clearTimeout(csbTimer); csbTimer=setTimeout(()=>loadCombos(),1200);
+}
+async function loadCombos(force){
+  const sig=deckSignature();
+  if(!force&&S.csb.sig===sig) return;
+  const entries=deckEntries();
+  if(entries.length<2){ S.csb={sig,status:'idle',data:null,error:null}; return; }
+  S.csb={sig,status:'loading',data:S.csb.data,error:null}; renderE();
+  const cmd=S.commander?[{card:S.commander,quantity:1}]:[];
+  const main=entries.filter(e=>e.card.name!==S.commander).map(e=>({card:e.card.name,quantity:e.qty}));
+  const CIBLE='https://backend.commanderspellbook.com/find-my-combos';
+  const adresse=()=>S.csbRelay
+    ? S.csbRelay.replace('{url}',encodeURIComponent(CIBLE))+(S.csbRelay.includes('{url}')?'':encodeURIComponent(CIBLE))
+    : CIBLE;
+  // 1) requête JSON classique ; 2) même requête en text/plain, qui évite le contrôle
+  //    préalable OPTIONS et passe parfois là où la première est bloquée
+  const envoyer=async(corps,type)=>fetch(adresse(),{
+    method:'POST',headers:{'Content-Type':type||'application/json'},body:JSON.stringify(corps)});
+  try{
+    let r=null, bloque=null;
+    for(const type of ['application/json','text/plain;charset=UTF-8']){
+      try{
+        r=await envoyer({commanders:cmd,main},type);
+        if(r.status===400) r=await envoyer({main:[...cmd,...main]},type);   // séparation refusée
+        if(r.status===415) { r=null; continue; }                            // type non accepté
+        break;
+      }catch(err){ bloque=err; r=null; }
+    }
+    if(!r) throw bloque||new Error('requête bloquée par le navigateur');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    const res=j.results||j;
+    const dansDeck=new Set(entries.map(e=>norm(e.card.name)));
+    const assembles=(res.included||[]).map(comboDepuisVariante);
+    const presque=[...(res.almostIncluded||[]),...(res.almostIncludedByAddingColors||[])]
+      .map(comboDepuisVariante)
+      .map(c=>({...c,manquantes:c.cartes.filter(n=>!dansDeck.has(norm(n)))}))
+      .filter(c=>c.manquantes.length>0&&c.manquantes.length<=2);
+    const parManquante=new Map(), parCarte=new Map();
+    const ajoute=(m,k,v)=>{ const key=norm(k); if(!m.has(key)) m.set(key,[]); if(m.get(key).length<6) m.get(key).push(v); };
+    presque.forEach(c=>c.manquantes.forEach(n=>ajoute(parManquante,n,c)));
+    [...assembles,...presque].forEach(c=>c.cartes.forEach(n=>ajoute(parCarte,n,c)));
+    S.csb={sig,status:'ok',error:null,data:{assembles,presque,parManquante,parCarte}};
+  }catch(err){
+    const cors=(err instanceof TypeError)||/Failed to fetch|NetworkError|Load failed/i.test(err.message||'');
+    S.csb={sig,status:cors?'cors':'error',data:null,error:err.message||'requête refusée'};
+  }
+  renderE(); renderF();
+}
+function combosDe(card){
+  const d=S.csb.data; if(!d||!card) return [];
+  return d.parCarte.get(norm(card.name))||d.parCarte.get(norm(frontFace(card.name)))||[];
+}
+function combosCompletesPar(card){
+  const d=S.csb.data; if(!d||!card) return [];
+  return d.parManquante.get(norm(card.name))||d.parManquante.get(norm(frontFace(card.name)))||[];
+}
+function libelleCombo(c,carteCourante){
+  const autres=c.cartes.filter(n=>!carteCourante||norm(n)!==norm(carteCourante.name));
+  return `${autres.join(' + ')}${c.produit.length?` → ${c.produit.slice(0,3).join(', ')}`:''}`;
+}
 function currentSuggestions(){
   const deck=deckEntries().map(e=>e.card);
   const f=fmt(), cnt=deckCounts(), tgt=targets();
@@ -1716,9 +1968,10 @@ function currentSuggestions(){
   const deckProd=new Map(), deckTrig=new Map();
   const push=(m,k,v)=>{ if(!m.has(k)) m.set(k,[]); m.get(k).push(v); };
   deck.forEach(d=>{
-    d.an.produces.forEach(pp=>{ const [cc,sc]=pp.split('|'); if(sc!=='self') return;
-      feeds(cc).forEach(k=>push(deckProd,k,d.name)); });
-    d.an.triggers.forEach(tt=>{ const [cc,sc]=tt.split('|'); if(sc!=='self') return; push(deckTrig,cc,d.name); });
+    d.an.produces.forEach(pp=>{ if(pp.scope!=='self') return;
+      feeds(pp.c).forEach(k=>push(deckProd,k,{nom:d.name,p:pp})); });
+    d.an.triggers.forEach(tt=>{ if(tt.scope!=='self'&&tt.q.portee!=='adversaire') return;
+      push(deckTrig,tt.c,{nom:d.name,t:tt}); });
   });
 
   const pool=[];
@@ -1742,16 +1995,20 @@ function currentSuggestions(){
     let score=0; const reasons=[];
     // synergies avec le deck
     const linkMap=new Map();
-    const addLink=(nm,concept,dir)=>{ if(nm===c.name) return;
+    const addLink=(nm,concept,dir,k,detail)=>{ if(nm===c.name||k<=0) return;
       if(!linkMap.has(nm)) linkMap.set(nm,new Map());
-      linkMap.get(nm).set(concept+'|'+dir,{concept,dir}); };
-    c.an.produces.forEach(pp=>{ const [cc,sc]=pp.split('|'); if(sc!=='self') return;
-      feeds(cc).forEach(k=>(deckTrig.get(k)||[]).forEach(nm=>addLink(nm,k,'ab'))); });
-    c.an.triggers.forEach(tt=>{ const [cc,sc]=tt.split('|'); if(sc!=='self') return;
-      (deckProd.get(cc)||[]).forEach(nm=>addLink(nm,cc,'ba')); });
+      const cle=concept+'|'+dir, ancien=linkMap.get(nm).get(cle);
+      if(!ancien||ancien.k<k) linkMap.get(nm).set(cle,{concept,dir,k,detail});
+    };
+    c.an.produces.forEach(pp=>{ if(pp.scope!=='self') return;
+      feeds(pp.c).forEach(k=>(deckTrig.get(k)||[]).forEach(x=>
+        addLink(x.nom,k,'ab',compat(pp,x.t),libelleQual(x.t.q)))); });
+    c.an.triggers.forEach(tt=>{ if(tt.scope!=='self'&&tt.q.portee!=='adversaire') return;
+      (deckProd.get(tt.c)||[]).forEach(x=>
+        addLink(x.nom,tt.c,'ba',compat(x.p,tt),libelleQual(tt.q))); });
     const partners=[...linkMap.entries()].map(([nm,m])=>{
       const links=[...m.values()];
-      let w=0; links.forEach(l=>{ w += l.concept==='ETB'?0.8:(l.dir==='ab'?3.2:2.6); });
+      let w=0; links.forEach(l=>{ w += (l.concept==='ETB'?0.8:(l.dir==='ab'?3.2:2.6))*(l.k||1); });
       return {name:nm,links,w};
     });
     let weight=partners.reduce((a,p2)=>a+p2.w,0);
@@ -1776,6 +2033,12 @@ function currentSuggestions(){
     const hasBa=partners.some(p2=>p2.links.some(l=>l.dir==='ba'));
     if(hasAb&&hasBa){ graph.push('pont'); score+=5;
       reasons.unshift('relie deux effets déjà présents : elle reçoit un déclencheur du deck et en fournit un autre'); }
+    const combos=combosCompletesPar(c);
+    if(combos.length){
+      score+=11;
+      const c0=combos[0];
+      reasons.unshift(`combo connu : avec ${c0.cartes.filter(n=>norm(n)!==norm(c.name)).join(' + ')}${c0.produit.length?` → ${c0.produit.slice(0,2).join(', ')}`:''}${combos.length>1?` (et ${combos.length-1} autre${combos.length>2?'s':''})`:''}`);
+    }
     const er=edhrecFor(c);
     if(er){
       score+=3+er.inclusion*8+Math.max(0,er.synergy)*10;
@@ -1802,7 +2065,7 @@ function currentSuggestions(){
     score+=Math.min(3,c.an.edges.length*0.35);
     if(p.source==='achat'){ score-=2.5; reasons.push(`hors collection — ${eur(p.offer.price)} (${p.offer.quality}, ${p.offer.lang}, ${p.offer.seller})`); }
     if(deckSize()===0) score+=c.cats.has('ramp')||c.cats.has('pioche')?4:0;
-    res.push({card:c,score,reasons,partners,source:p.source,offer:p.offer,graph,edhrec:er});
+    res.push({card:c,score,reasons,partners,source:p.source,offer:p.offer,graph,edhrec:er,combos});
   });
   return res.filter(r=>r.score>0).sort((a,b)=>b.score-a.score);
 }
@@ -1848,6 +2111,7 @@ function sugRow(s){
       <b style="font-family:var(--display)">${esc(s.card.name)}</b>
       <span class="costs">${manaHTML(s.card,true)}</span>
       ${(s.graph||[]).map(g=>`<span class="tag" style="border-color:var(--brass);color:var(--brass)">${mark[g]}</span>`).join('')}
+      ${s.combos&&s.combos.length?`<span class="tag" style="border-color:#a077cf;color:#a077cf" title="Combo répertorié par Commander Spellbook">combo</span>`:''}
       ${s.edhrec?`<span class="tag" style="border-color:#57c9c4;color:#57c9c4" title="Statistiques EDHREC pour ce commandant">edhrec ${Math.round(s.edhrec.inclusion*100)} % · ${s.edhrec.synergy>=0?'+':'−'}${Math.abs(Math.round(s.edhrec.synergy*100))} %</span>`:''}
       <span class="mono small muted">score ${s.score.toFixed(1)}</span>
       <span style="margin-left:auto;display:flex;gap:6px">
@@ -1860,16 +2124,22 @@ function sugRow(s){
       — <a href="${esc(cmLink(s.card))}" target="_blank" rel="noopener" style="color:var(--brass)">voir les offres sur Cardmarket ↗</a></div>`:''}
   </div>`;
 }
-function renderF(){
-  const sug=currentSuggestions();
-  const graphPicks=sug.filter(s=>s.graph&&s.graph.length&&(!S.focusNode||s.graph.includes('noeud')));
-  const byType={};
-  sug.forEach(s=>{ const t=mainType(s.card); (byType[t]=byType[t]||[]).push(s); });
+function ligneBudget(){
   const left=S.budget.total-spent();
+  return S.budget.total>0&&S.budget.perCard>0
+    ? `Dépensé ${eur(spent())} · reste ${eur(Math.max(0,left))}`
+    : 'Budget à zéro : seules les cartes de votre collection sont proposées.';
+}
+function ligneAchats(){
   const buys=aAcheter();
-  document.getElementById('bodyF').innerHTML=`
-    ${panneauEdhrec()}
-    <div class="group">
+  if(!buys.length) return '';
+  return `<div class="small" style="margin-top:6px">À acheter : ${buys.map(l=>`<a href="${esc(cmLink(l.card))}" target="_blank" rel="noopener" style="color:var(--brass)">${esc(l.card.name)}</a> ×${l.qty} (${eur(l.total)})`).join(' · ')}</div>
+     <div class="row" style="margin-top:6px"><button class="btn" data-act="wants">Exporter la liste de wants Cardmarket</button></div>`;
+}
+/* Le panneau contient les champs de saisie : il n'est jamais reconstruit pendant la frappe,
+   sinon le curseur reviendrait au début du champ à chaque caractère. */
+function panneauAchats(){
+  return `<div class="group">
       <h4>Achats sur Cardmarket <a class="small" style="color:var(--brass)" href="https://www.cardmarket.com/fr/Magic" target="_blank" rel="noopener">cardmarket.com ↗</a></h4>
       <div class="row">
         <div class="field"><label class="lab" for="bT">Budget total (€)</label><input id="bT" type="number" min="0" step="1" value="${S.budget.total}" data-bud="total" style="width:96px"></div>
@@ -1883,13 +2153,17 @@ function renderF(){
         <div class="field"><label class="lab" for="bC">Pays du vendeur</label>
           <select id="bC" data-bud="country">${CM_COUNTRIES.map(([k,l])=>`<option value="${k}" ${S.budget.country===k?'selected':''}>${l}</option>`).join('')}</select></div>
       </div>
-      <div class="small muted" style="margin-top:6px">${S.budget.total>0&&S.budget.perCard>0
-        ? `Dépensé ${eur(spent())} · reste ${eur(Math.max(0,left))}`
-        : 'Budget à zéro : seules les cartes de votre collection sont proposées.'}</div>
+      <div class="small muted" style="margin-top:6px" id="budLine">${ligneBudget()}</div>
       <div class="small muted" style="margin-top:4px">Prix de référence : tendance Cardmarket, relayée par Scryfall et rafraîchie avec les visuels. L'état, la langue et le type de vendeur ajustent une <b>estimation</b> : les offres réelles se consultent sur la fiche Cardmarket, via le lien de chaque carte.</div>
-      ${buys.length?`<div class="small" style="margin-top:6px">À acheter : ${buys.map(l=>`<a href="${esc(cmLink(l.card))}" target="_blank" rel="noopener" style="color:var(--brass)">${esc(l.card.name)}</a> ×${l.qty} (${eur(l.total)})`).join(' · ')}</div>
-         <div class="row" style="margin-top:6px"><button class="btn" data-act="wants">Exporter la liste de wants Cardmarket</button></div>`:''}
-    </div>
+      <div id="budBuys">${ligneAchats()}</div>
+    </div>`;
+}
+function listeSuggestions(){
+  const sug=currentSuggestions();
+  const graphPicks=sug.filter(s=>s.graph&&s.graph.length&&(!S.focusNode||s.graph.includes('noeud')));
+  const byType={};
+  sug.forEach(s=>{ const t=mainType(s.card); (byType[t]=byType[t]||[]).push(s); });
+  const html=`
     ${graphPicks.length?`
       <div class="group" style="border-color:var(--brass-d)">
         <h4>Repérées par le graphe des capacités
@@ -1904,8 +2178,25 @@ function renderF(){
       :'<div class="empty">Aucune suggestion. Ajoutez des cartes à la collection, élargissez les couleurs ou augmentez le budget.</div>'}
     <div class="small muted">Le score combine les branchements avec le deck (un effet produit ici déclenche une capacité là-bas), les rôles manquants, la courbe de mana et la densité de capacités. Les cartes hors collection sont pénalisées et limitées par le budget.
       <br>Pas de connexion à votre compte : Cardmarket n'ouvre plus son API aux nouvelles applications et interdit le partage d'identifiants, et une page web ne peut pas signer les requêtes OAuth sans exposer le secret. L'atelier s'appuie donc sur les prix Cardmarket publiés par Scryfall, et vous renvoie vers la fiche du site pour l'achat.</div>`;
+  return {html,sug,graphPicks};
+}
+function majHintF(sug,graphPicks){
   const edhrecCount=sug.filter(x=>x.edhrec).length;
   document.getElementById('hintF').textContent=`${sug.length} pistes${graphPicks.length?` · ${graphPicks.length} via le graphe`:''}${edhrecCount?` · ${edhrecCount} sur EDHREC`:''}`;
+}
+/* Mise à jour légère : les résultats et les totaux changent, les champs de saisie ne bougent pas. */
+function refreshSuggestions(){
+  const r=listeSuggestions();
+  const liste=document.getElementById('sugList'); if(liste) liste.innerHTML=r.html;
+  const bl=document.getElementById('budLine'); if(bl) bl.innerHTML=ligneBudget();
+  const bb=document.getElementById('budBuys'); if(bb) bb.innerHTML=ligneAchats();
+  majHintF(r.sug,r.graphPicks);
+  renderTop();
+}
+function renderF(){
+  const r=listeSuggestions();
+  document.getElementById('bodyF').innerHTML=`${panneauEdhrec()}${panneauAchats()}<div id="sugList">${r.html}</div>`;
+  majHintF(r.sug,r.graphPicks);
   if(fmt().commander&&S.commander&&typeof fetch==='function'
      && S.edhrec.slug!==edhrecSlug(S.commander) && S.edhrec.status!=='loading') setTimeout(()=>loadEdhrec(),0);
 }
@@ -2007,11 +2298,15 @@ function applyScryfall(sc,requested,imagesOnly){
     if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img; }
     if(sc.purchase_uris&&sc.purchase_uris.cardmarket) target.cmUrl=sc.purchase_uris.cardmarket;
     if(pr.eur) target.price=parseFloat(pr.eur)||target.price;   // tendance Cardmarket du jour
+    const pw=sc.power||(faces&&faces[0]&&faces[0].power);
+    if(pw!=null&&/^\d+$/.test(String(pw))) target.force=+pw;
     return true;
   }
   const fresh=buildCard(sc.name,cost,type,price,text);
   if(Array.isArray(sc.color_identity)) fresh.identity=sc.color_identity.slice();
   if(typeof sc.cmc==='number') fresh.cmc=sc.cmc;
+  const pw=sc.power||(faces&&faces[0]&&faces[0].power);
+  if(pw!=null&&/^\d+$/.test(String(pw))) fresh.force=+pw;
   if(!target){ if(uris){ fresh.img=uris.small||uris.normal; fresh.imgN=uris.normal||uris.large||fresh.img; }
     registerCard(fresh); return true; }
   target=renameCard(target,sc.name);
@@ -2322,6 +2617,7 @@ document.addEventListener('click',ev=>{
     document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
   }
   if(act==='edhrec'){ loadEdhrec(t.dataset.force==='1'); return; }
+  if(act==='combos'){ loadCombos(true); return; }
   if(act==='saveNow'){ save();
     toast(saveState==='ok'?'Données enregistrées dans ce navigateur.'
          :(saveState==='off'?"Stockage indisponible ici : téléchargez le fichier et ouvrez-le depuis votre disque."
@@ -2422,12 +2718,16 @@ function withFocus(fn){
 }
 document.addEventListener('input',ev=>{
   const t=ev.target;
+  if(t.id==='csbRelay'){ S.csbRelay=t.value.trim(); scheduleSave(); return; }
   if(t.id==='q'){ S.search=t.value; S.limitB=PAGE; withFocus(()=>{renderB();renderC();renderD();renderF();renderTop();}); return; }
   if(t.dataset.cust){ const k=t.dataset.cust;
     S.custom[k]=k==='commander'?t.value==='1':(parseInt(t.value,10)||0); withFocus(renderAll); return; }
   if(t.dataset.lim){ S.custom.colorLimits[t.dataset.lim][t.dataset.side]=parseInt(t.value,10)||0; withFocus(renderE); return; }
   if(t.dataset.bud){ const k=t.dataset.bud;
-    S.budget[k]=(k==='total'||k==='perCard')?(parseFloat(t.value)||0):t.value; withFocus(()=>{renderF();renderTop();}); return; }
+    S.budget[k]=(k==='total'||k==='perCard')?(parseFloat(t.value)||0):t.value;
+    if(k==='total'||k==='perCard') refreshSuggestions();   // sans toucher au champ en cours de saisie
+    else { renderF(); renderTop(); }
+    scheduleSave(); return; }
 });
 document.addEventListener('change',ev=>{
   const t=ev.target;
@@ -2439,7 +2739,9 @@ document.addEventListener('change',ev=>{
     S.commander=t.value; renderAll(); toast(`${t.value} est désormais le commandant.`); return; }
   if(t.dataset.act==='sort'){ S.sort=t.value; S.limitB=PAGE; renderB(); return; }
   if(t.dataset.bud){ const k=t.dataset.bud;
-    S.budget[k]=(k==='total'||k==='perCard')?(parseFloat(t.value)||0):t.value; renderF(); renderTop(); return; }
+    S.budget[k]=(k==='total'||k==='perCard')?(parseFloat(t.value)||0):t.value;
+    if(k==='total'||k==='perCard') refreshSuggestions(); else { renderF(); renderTop(); }
+    scheduleSave(); return; }
   if(t.dataset.act==='typeFilter'){ S.typeFilter=t.value; S.limitB=PAGE; renderB(); renderC(); renderD(); renderF(); return; }
 });
 
@@ -2461,14 +2763,14 @@ function snapshot(){
       if(c.img||c.cmUrl) enrich.push({n:c.name,p:c.price,g:c.img||'',G:c.imgN||'',u:c.cmUrl||''});
     }else{
       cartes.push({n:c.name,c:c.cost||'—',t:c.type,p:c.price,x:c.text,
-        i:(c.identity||[]).join(''),m:c.cmc,g:c.img||'',G:c.imgN||'',u:c.cmUrl||'',k:c.unknown?1:0});
+        i:(c.identity||[]).join(''),m:c.cmc,f:c.force,g:c.img||'',G:c.imgN||'',u:c.cmUrl||'',k:c.unknown?1:0});
     }
   });
   return {v:1,date:Date.now(),
     collection:[...S.collection], deck:[...S.deck],
     commander:S.commander, colors:[...S.colors], colorMode:S.colorMode,
     format:S.format, custom:S.custom, sort:S.sort, view:S.view, images:S.images,
-    graphSource:S.graphSource, showImplicit:S.showImplicit, budget:S.budget,
+    graphSource:S.graphSource, showImplicit:S.showImplicit, budget:S.budget, csbRelay:S.csbRelay,
     cartes, enrich};
 }
 function ecrire(payload){
@@ -2506,6 +2808,7 @@ function restore(d){
     if(!card) card=registerCard(buildCard(o.n,o.c||'—',o.t||'Inconnu',o.p||0,o.x||''));
     if(o.i) card.identity=o.i.split('');
     if(typeof o.m==='number') card.cmc=o.m;
+    if(typeof o.f==='number') card.force=o.f;
     if(o.g) card.img=o.g; if(o.G) card.imgN=o.G; if(o.u) card.cmUrl=o.u;
     card.unknown=!!o.k;
     if(card.img) card.imgTried=true;
@@ -2525,6 +2828,7 @@ function restore(d){
   if(typeof d.showImplicit==='boolean') S.showImplicit=d.showImplicit;
   if(d.custom) S.custom={...S.custom,...d.custom,colorLimits:{...S.custom.colorLimits,...(d.custom.colorLimits||{})}};
   if(d.budget) S.budget={...S.budget,...d.budget};
+  if(typeof d.csbRelay==='string') S.csbRelay=d.csbRelay;
   return true;
 }
 function chargerSauvegarde(){
