@@ -1166,27 +1166,6 @@ function renderA(){
         </div>
       </div>
     </div>${custom}`;
-  document.getElementById('bodyA').insertAdjacentHTML('beforeend',`
-    <div class="group" style="margin-top:10px">
-      <h4>Données</h4>
-      <div class="small muted">Collection, deck, achats et préférences sont enregistrés dans ce navigateur, sur cet appareil. Rien n'est envoyé ailleurs, et un autre navigateur ne verra pas ces données.</div>
-      <div class="row" style="gap:6px;margin-top:8px">
-        <button class="btn sm" data-act="saveNow">Enregistrer maintenant</button>
-        <button class="btn sm" data-act="saveExport">Exporter un fichier</button>
-        <label class="btn sm" for="saveFile" style="margin:0;cursor:pointer">Restaurer un fichier</label>
-        <input id="saveFile" type="file" accept="application/json,.json" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
-        <button class="btn sm danger" data-act="saveWipe">Effacer les données locales</button>
-      </div>
-    </div>`);
-  const sf=document.getElementById('saveFile');
-  if(sf) sf.addEventListener('change',async ev=>{
-    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
-    try{
-      const d=JSON.parse(await f.text());
-      if(!restore(d)) throw new Error('format non reconnu');
-      renderAll(); save(); toast(`Sauvegarde restaurée : ${collectionCards().reduce((n,e)=>n+e.qty,0)} exemplaires, deck de ${deckSize()} cartes.`);
-    }catch(err){ toast(`Fichier illisible : ${err.message||'format invalide'}.`); }
-  });
   document.getElementById('hintA').textContent=`${[...S.colors].join('')} · ${f.label}`;
 }
 
@@ -1321,35 +1300,6 @@ function buildGraph(cards){
   edges.forEach(e=>{ deg[e.from]+=e.cards.size; deg[e.to]+=e.cards.size; });
   return {edges,deg};
 }
-function findCycles(edges,implicit){
-  const adj={}; NODES.forEach(n=>adj[n[0]]=[]);
-  edges.forEach(e=>adj[e.from].push({to:e.to,cards:[...e.cards.keys()],real:true}));
-  if(implicit) IMPLICIT.forEach(([a,b])=>adj[a].push({to:b,cards:[],real:false}));
-  const cycles=[]; const seen=new Set(); let budget=150000;
-  const start=Object.keys(adj).filter(n=>adj[n].length);
-  for(const s of start){
-    if(budget<=0) break;
-    const stack=[{node:s,path:[s],used:[]}];
-    while(stack.length&&cycles.length<250&&budget-->0){
-      const cur=stack.pop();
-      for(const e of adj[cur.node]){
-        if(e.to===s&&cur.path.length>=2){
-          const used=[...cur.used,e];
-          const realCards=new Set(); used.forEach(u=>u.cards.forEach(c=>realCards.add(c)));
-          const nReal=used.filter(u=>u.real).length;
-          if(realCards.size>=2&&nReal>=2){
-            const key=[...cur.path].sort().join('|')+'::'+[...realCards].sort().join('|');
-            if(!seen.has(key)){ seen.add(key);
-              cycles.push({path:[...cur.path],cards:[...realCards],implicitCount:used.length-nReal,len:used.length}); }
-          }
-        } else if(!cur.path.includes(e.to)&&cur.path.length<5){
-          stack.push({node:e.to,path:[...cur.path,e.to],used:[...cur.used,e]});
-        }
-      }
-    }
-  }
-  return cycles.sort((a,b)=>a.implicitCount-b.implicitCount||a.len-b.len||b.cards.length-a.cards.length).slice(0,8);
-}
 function svgGraph(g){
   const R=380,cx=500,cy=500,N=NODES.length;
   const pos={};
@@ -1412,7 +1362,6 @@ function svgGraph(g){
 }
 function renderD(){
   const cards=graphCards(), g=buildGraph(cards);
-  const cycles=findCycles(g.edges,S.showImplicit);
   const focusInfo=(()=>{
     if(!S.focusNode) return '';
     const inb=[],outb=[];
@@ -1444,14 +1393,9 @@ function renderD(){
     <div class="graphbox">${svgGraph(g)}</div>
     <div class="legend">${Object.entries(GROUPS).map(([k,v])=>`<span class="lg"><span class="dot" style="background:${v.color}"></span>${v.label}</span>`).join('')}</div>
     ${focusInfo}
-    <h3 style="margin:14px 0 6px;font-size:15px">Boucles détectées <span class="small muted">— un cycle signale un moteur ou un combo potentiel</span></h3>
-    ${cycles.length?cycles.map(c=>`<div class="combo">
-      <div class="path">${c.path.map(p=>esc(NODE[p].label)).join(' → ')} → ${esc(NODE[c.path[0]].label)}</div>
-      <div class="small">${c.cards.map(refCarte).join(' + ')}${c.implicitCount?` <span class="muted">(${c.implicitCount} arc${c.implicitCount>1?'s':''} de règle)</span>`:''}</div>
-    </div>`).join(''):'<div class="empty">Aucune boucle sur ce périmètre. Élargissez la source du graphe ou activez les arcs de règles.</div>'}
-    <div style="margin-top:8px"><button class="btn" data-act="graphToF">Proposer des cartes qui complètent ${S.focusNode?'ce nœud':'ces boucles'}</button></div>
+    <div style="margin-top:8px"><button class="btn" data-act="graphToF">${S.focusNode?'Proposer des cartes branchées sur ce nœud':'Voir les suggestions d\'ajout'}</button></div>
     <div class="small muted" style="margin-top:8px">Chaque arc va d'un déclencheur vers un effet produit. Une carte peut poser plusieurs arcs. Les arcs pointillés sont les enchaînements permis par les règles (un jeton qui arrive déclenche les effets d'arrivée en jeu, un trésor sacrifié produit du mana…).</div>`;
-  document.getElementById('hintD').textContent=`${g.edges.size} arcs · ${cycles.length} boucles`;
+  document.getElementById('hintD').textContent=`${cards.length} cartes · ${g.edges.size} arcs`;
 }
 
 /* =====================================================================
@@ -1643,44 +1587,6 @@ function openCardModal(name){
   ].filter(Boolean).join('');
   openDialog(card.name,ficheHTML(card),actions,true);
 }
-function blocCombos(){
-  const e=S.csb;
-  if(e.status==='loading'&&!e.data) return `<div class="group"><h4>Combos connus</h4>
-    <div class="small muted">Interrogation de Commander Spellbook…</div></div>`;
-  if(e.status==='cors'||e.status==='error') return `<div class="group"><h4>Combos connus</h4>
-    <div class="small">${e.status==='cors'
-      ? `La requête n'atteint pas Commander Spellbook : leur serveur n'autorise pas les appels depuis une page tierce (règle CORS). Ce n'est pas un problème de votre côté, et rien ne peut le contourner depuis le navigateur seul.`
-      : `Commander Spellbook a répondu par une erreur (${esc(e.error||'')}).`}</div>
-    <div class="small muted" style="margin-top:6px">Deux issues : passer par un relais qui ajoute les en-têtes manquants, ou consulter le site directement. Un relais fait transiter la liste de votre deck par un tiers, et peut cesser de fonctionner sans préavis.</div>
-    <div class="row" style="gap:6px;margin-top:8px">
-      <input id="csbRelay" type="text" value="${esc(S.csbRelay)}" placeholder="URL d'un relais, ex. https://corsproxy.io/?url={url}" style="flex:1;min-width:220px">
-      <button class="btn sm" data-act="combos">Réessayer</button>
-      <a class="btn sm" href="https://commanderspellbook.com/" target="_blank" rel="noopener">Ouvrir le site ↗</a>
-    </div>
-    <div class="small muted" style="margin-top:4px">Le jeton <b>{url}</b> est remplacé par l'adresse de l'API, encodée. Laissez vide pour un appel direct.</div>
-  </div>`;
-  if(!e.data) return '';
-  const {assembles,presque}=e.data;
-  if(!assembles.length&&!presque.length) return `<div class="group"><h4>Combos connus</h4>
-    <div class="small muted">Aucun combo répertorié dans ce deck, ni à une carte près.</div>
-    <div class="row" style="margin-top:6px"><button class="btn sm" data-act="combos">Réinterroger</button></div></div>`;
-  return `<div class="group" style="border-color:#5a4780">
-    <h4>Combos connus <span class="small muted">Commander Spellbook · ${assembles.length} assemblé(s), ${presque.length} à une carte près</span></h4>
-    ${assembles.length?`<div class="list">${assembles.slice(0,6).map(c=>`
-      <div class="lrow" style="align-items:flex-start;flex-direction:column;gap:2px">
-        <div><b>${esc(c.cartes.join(' + '))}</b></div>
-        <div class="small">${c.produit.length?esc(c.produit.join(' · ')):'effet non détaillé'}
-          — <a href="${esc(c.url)}" target="_blank" rel="noopener" style="color:var(--brass)">détail ↗</a></div>
-      </div>`).join('')}</div>`:''}
-    ${presque.length?`<div class="small muted" style="margin:8px 0 4px">À une carte près :</div>
-      <div class="list">${presque.slice(0,6).map(c=>`
-        <div class="lrow" style="align-items:flex-start;flex-direction:column;gap:2px">
-          <div class="small">il manque <b>${esc(c.manquantes.join(', '))}</b> pour ${esc(c.cartes.join(' + '))}</div>
-          <div class="small muted">${c.produit.length?esc(c.produit.slice(0,3).join(' · ')):''}</div>
-        </div>`).join('')}</div>`:''}
-    <div class="row" style="margin-top:8px"><button class="btn sm" data-act="combos">Réinterroger</button></div>
-  </div>`;
-}
 function blocAchats(){
   const lignes=aAcheter();
   if(!lignes.length) return '';
@@ -1777,7 +1683,6 @@ function renderE(){
     </div>
     ${msgs.length?`<div class="warnbox"><b>À corriger</b><ul style="margin:5px 0 0 16px;padding:0">${msgs.slice(0,6).map(m=>`<li>${esc(m)}</li>`).join('')}</ul></div>`:`<div class="warnbox" style="border-color:#2f6b46;background:rgba(79,159,104,.1)">Le deck respecte les contraintes du format.</div>`}
     ${f.commander?zoneCommandant():''}
-    ${blocCombos()}
     ${blocAchats()}
     <h3 style="margin:12px 0 6px;font-size:15px">Courbe de mana</h3>
     ${histogram(cmcSplit,true)}
@@ -2123,14 +2028,15 @@ function panneauEdhrec(){
     </div></div>`;
 }
 function sugRow(s){
-  const mark={boucle:'boucle',pont:'pont',noeud:'nœud'};
-  return `<div style="border:1px solid ${s.graph&&s.graph.length?'var(--brass-d)':'var(--line)'};border-radius:8px;padding:8px;background:var(--panel)">
+  const n=(s.partners||[]).length;
+  return `<div style="border:1px solid ${n?'var(--brass-d)':'var(--line)'};border-radius:8px;padding:8px;background:var(--panel)">
     <div class="row" style="gap:6px">
       ${S.images&&s.card.img?`<img src="${esc(s.card.img)}" alt="" style="width:34px;border-radius:3px" loading="lazy">`
         :`<span class="dot" style="background:${stripeColor(s.card)}"></span>`}
       <b style="font-family:var(--display)">${esc(s.card.name)}</b>
       <span class="costs">${manaHTML(s.card,true)}</span>
-      ${(s.graph||[]).map(g=>`<span class="tag" style="border-color:var(--brass);color:var(--brass)">${mark[g]}</span>`).join('')}
+      <span class="tag" style="border-color:${n?'var(--brass)':'var(--line2)'};color:${n?'var(--brass)':'var(--dim2)'}"
+        title="Cartes du deck avec lesquelles elle interagit">${n} interaction${n>1?'s':''}</span>
       ${s.combos&&s.combos.length?`<span class="tag" style="border-color:#a077cf;color:#a077cf" title="Combo répertorié par Commander Spellbook">combo</span>`:''}
       ${s.edhrec?`<span class="tag" style="border-color:#57c9c4;color:#57c9c4" title="Statistiques EDHREC pour ce commandant">edhrec ${Math.round(s.edhrec.inclusion*100)} % · ${s.edhrec.synergy>=0?'+':'−'}${Math.abs(Math.round(s.edhrec.synergy*100))} %</span>`:''}
       <span class="mono small muted">score ${s.score.toFixed(1)}</span>
@@ -2180,22 +2086,27 @@ function panneauAchats(){
 }
 function listeSuggestions(){
   const sug=currentSuggestions();
-  const graphPicks=sug.filter(s=>s.graph&&s.graph.length&&(!S.focusNode||s.graph.includes('noeud')));
+  const graphPicks=S.focusNode?sug.filter(s=>s.graph&&s.graph.includes('noeud')):[];
   const byType={};
   sug.forEach(s=>{ const t=mainType(s.card); (byType[t]=byType[t]||[]).push(s); });
   const html=`
     ${graphPicks.length?`
       <div class="group" style="border-color:var(--brass-d)">
-        <h4>Repérées par le graphe des capacités
-          <span class="small muted">${S.focusNode?`autour de « ${esc(NODE[S.focusNode].label)} »`:'boucles fermées et ponts entre effets'}</span></h4>
+        <h4>Autour du nœud sélectionné
+          <span class="small muted">« ${esc(NODE[S.focusNode]?NODE[S.focusNode].label:'')} » en section D</span></h4>
         <div class="list">${graphPicks.slice(0,8).map(s=>sugRow(s)).join('')}</div>
-        <div class="small muted" style="margin-top:6px">Ces cartes viennent de la lecture des arcs : elles referment un cycle du graphe ou relient deux effets déjà présents dans le deck.${S.focusNode?' Le filtre suit le nœud sélectionné en section D.':''}</div>
       </div>`:''}
     ${sug.length?TYPE_ORDER.filter(t=>byType[t]).map(t=>`
       <div class="group"><h4>${t} <span class="small muted">${byType[t].length} propositions</span></h4>
         <div class="list">${byType[t].slice(0,6).map(s=>sugRow(s)).join('')}</div>
       </div>`).join('')
       :'<div class="empty">Aucune suggestion. Ajoutez des cartes à la collection, élargissez les couleurs ou augmentez le budget.</div>'}
+    ${(S.csb.status==='cors'||S.csb.status==='error')?`<div class="small muted" style="margin-bottom:6px">
+      Commander Spellbook injoignable (${esc(S.csb.error||'')}) : les étiquettes « combo » sont absentes.
+      <span class="row" style="gap:6px;margin-top:4px">
+        <input id="csbRelay" type="text" value="${esc(S.csbRelay)}" placeholder="relais éventuel, ex. https://corsproxy.io/?url={url}" style="flex:1;min-width:200px">
+        <button class="btn sm" data-act="combos">Réessayer</button>
+      </span></div>`:''}
     <div class="small muted">Le score combine les branchements avec le deck (un effet produit ici déclenche une capacité là-bas), les rôles manquants, la courbe de mana et la densité de capacités. Les cartes hors collection sont pénalisées et limitées par le budget.
       <br>Pas de connexion à votre compte : Cardmarket n'ouvre plus son API aux nouvelles applications et interdit le partage d'identifiants, et une page web ne peut pas signer les requêtes OAuth sans exposer le secret. L'atelier s'appuie donc sur les prix Cardmarket publiés par Scryfall, et vous renvoie vers la fiche du site pour l'achat.</div>`;
   return {html,sug,graphPicks};
@@ -2550,79 +2461,72 @@ function openImport(cible){
     },10);
   };
 }
+function ajouterCarte(c,q,cible,completer){
+  if(cible==='deck'){
+    const n=deckAdd(c,q,{completer});
+    renderAll();
+    toast(n?`${c.name} ×${n} ajoutée(s) au deck.`
+           :`${c.name} : limite de ${fmt().maxCopies} copie(s) atteinte.`);
+  }else{
+    S.collection.set(c.name,(S.collection.get(c.name)||0)+q);
+    renderAll();
+    toast(`${c.name} ×${q} ajoutée(s) à la collection.`);
+  }
+}
+/* Résultats de recherche filtrés par les couleurs de la section A. */
+function chercheCartes(q){
+  const t=norm(q), tl=loose(q);
+  if(t.length<2) return [];
+  const parNom=[], parTexte=[];
+  for(const c of DB){
+    if(!colorOK(c)) continue;
+    const n=norm(c.name);
+    if(n.startsWith(t)) parNom.unshift(c);
+    else if(n.includes(t)) parNom.push(c);
+    // le type est cherché en français comme en anglais : « créature » trouve Creature
+    else if(t.length>=3 && (loose(mainType(c)).includes(tl)||norm(c.type).includes(t)||norm(c.text).includes(t)))
+      parTexte.push(c);
+    if(parNom.length+parTexte.length>400) break;
+  }
+  return [...parNom,...parTexte].slice(0,14);
+}
+function resultatsHTML(q,cible){
+  const res=chercheCartes(q);
+  const cols=[...S.colors].join('')||'aucune';
+  if(norm(q).length<2)
+    return `<div class="small muted">Tapez au moins deux lettres. La recherche porte sur le nom, le type et le texte, et ne montre que les cartes compatibles avec les couleurs sélectionnées en section A (${esc(cols)}).</div>`;
+  if(!res.length)
+    return `<div class="small muted">Aucune carte ne correspond dans les couleurs ${esc(cols)}. Élargissez le filtre en section A, ou importez la carte en section B.</div>`;
+  return `<div class="small muted" style="margin-bottom:4px">${res.length} résultat(s) · couleurs ${esc(cols)}</div>
+    <div class="list">${res.map(c=>{
+      const poss=S.collection.get(c.name)||0, dans=S.deck.get(c.name)||0;
+      return `<button type="button" class="lrow" style="text-align:left" data-act="addPick" data-name="${esc(c.name)}" data-cible="${cible}">
+        <span class="dot" style="background:${stripeColor(c)}"></span>
+        <span class="cname" data-card-name="${esc(c.name)}">${esc(c.name)}</span>
+        <span class="costs">${manaHTML(c,true)}</span>
+        <span class="mono small muted">${esc(mainType(c))}</span>
+        <span class="mono small">${eur(c.price)}</span>
+        <span class="mono small ${poss?'':'muted'}">${poss} en collection${dans?` · ${dans} au deck`:''}</span>
+      </button>`;
+    }).join('')}</div>`;
+}
+function majResultats(cible){
+  const z=document.getElementById('addRes');
+  if(z) z.innerHTML=resultatsHTML(document.getElementById('addN').value,cible);
+}
 function openAdd(cible){
   const versDeck=cible==='deck';
   openDialog(versDeck?'Ajouter une carte au deck':'Ajouter une carte à la collection',
-    `<div class="field"><label class="lab" for="addN">Carte</label>
-      <input id="addN" list="dbList" placeholder="Commencez à taper un nom…">
-      <datalist id="dbList">${DB.slice(0,1200).map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist></div>
-     <div class="field"><label class="lab" for="addQ">Exemplaires</label><input id="addQ" type="number" min="1" value="1" style="width:90px"></div>
-     ${versDeck?`<label class="row small" style="gap:6px"><input type="checkbox" id="addStock" checked> Ajouter aussi à la collection si vous ne la possédez pas</label>`:''}`,
-    '<button class="btn" value="cancel">Annuler</button><button class="btn pri" id="okAdd" value="ok">Ajouter</button>');
-  document.getElementById('okAdd').onclick=()=>{
-    const nm=document.getElementById('addN').value.trim();
-    const q=parseInt(document.getElementById('addQ').value,10)||1;
-    const completer=versDeck&&document.getElementById('addStock').checked;
-    const c=find(nm);
-    setTimeout(()=>{
-      if(!c){ toast(`« ${nm} » est absent de la base. Importez-la ou vérifiez l'orthographe exacte.`); return; }
-      if(versDeck){
-        const n=deckAdd(c,q,{completer});
-        renderAll();
-        toast(n?`${c.name} ×${n} ajoutée(s) au deck.`
-               :`${c.name} : limite de copies atteinte ou aucun exemplaire disponible.`);
-      }else{
-        S.collection.set(c.name,(S.collection.get(c.name)||0)+q); renderAll();
-        toast(`${c.name} ×${q} ajoutée(s) à la collection.`);
-      }
-    },10);
-  };
+    `<div class="row" style="align-items:flex-end">
+       <div class="field" style="flex:1;min-width:180px"><label class="lab" for="addN">Rechercher</label>
+         <input id="addN" data-recherche="${cible}" placeholder="nom, type ou texte de la carte…" autocomplete="off"></div>
+       <div class="field"><label class="lab" for="addQ">Exemplaires</label>
+         <input id="addQ" type="number" min="1" value="1" style="width:90px"></div>
+     </div>
+     ${versDeck?`<label class="row small" style="gap:6px"><input type="checkbox" id="addStock"> Ajouter aussi à la collection (sinon la carte est comptée à l'achat)</label>`:''}
+     <div id="addRes">${resultatsHTML('',cible)}</div>`,
+    '<button class="btn" value="cancel">Fermer</button>',true);
 }
-/* Aperçu de la carte au survol d'un nom : le visuel suit le curseur. */
-let apercuEl=null, apercuNom=null;
-function refCarte(nom){ return `<span class="cardref" data-card-name="${esc(nom)}">${esc(nom)}</span>`; }
-function placerApercu(x,y){
-  if(!apercuEl) return;
-  const l=apercuEl.getBoundingClientRect?apercuEl.getBoundingClientRect():{width:236,height:330};
-  const w=l.width||236, h=l.height||330;
-  const dx=(x+18+w>window.innerWidth)?x-18-w:x+18;
-  const dy=Math.max(8,Math.min(y-h/2,window.innerHeight-h-8));
-  apercuEl.style.left=Math.max(8,dx)+'px'; apercuEl.style.top=dy+'px';
-}
-function contenuApercu(c){
-  const src=c.imgN||c.img;
-  return src
-    ? `<img src="${esc(src)}" alt="${esc(c.name)}">`
-    : `<div class="txt"><div class="n">${esc(c.name)}</div>
-        <div class="small muted">${esc(c.type)}${c.cmc?` · CMC ${c.cmc}`:''}</div>
-        <div class="costs" style="margin:4px 0">${manaHTML(c,true)}</div>
-        <div class="small" style="white-space:pre-line">${esc((c.text||'').replace(/ \/\/ /g,'\n').slice(0,260))}</div></div>`;
-}
-function montrerApercu(nom,x,y){
-  const c=find(nom); if(!c) return;
-  if(!apercuEl){ apercuEl=document.createElement('div'); apercuEl.id='cardPreview'; document.body.appendChild(apercuEl); }
-  apercuNom=c.name;
-  apercuEl.innerHTML=contenuApercu(c);
-  apercuEl.style.display='block';
-  placerApercu(x,y);
-  if(!c.img&&S.images&&!c.unknown) queueImages([c]);   // le visuel manquant est demandé à Scryfall
-}
-function majApercu(){
-  if(!apercuEl||apercuEl.style.display!=='block'||!apercuNom) return;
-  const c=find(apercuNom); if(c) apercuEl.innerHTML=contenuApercu(c);
-}
-function cacherApercu(){ if(apercuEl){ apercuEl.style.display='none'; apercuNom=null; } }
-document.addEventListener('mouseover',ev=>{
-  const t=ev.target.closest&&ev.target.closest('[data-card-name]');
-  if(t) montrerApercu(t.dataset.cardName,ev.clientX,ev.clientY);
-});
-document.addEventListener('mousemove',ev=>{
-  if(apercuEl&&apercuEl.style.display==='block') placerApercu(ev.clientX,ev.clientY);
-});
-document.addEventListener('mouseout',ev=>{
-  const t=ev.target.closest&&ev.target.closest('[data-card-name]');
-  if(t) cacherApercu();
-});
 let toastTimer=null;
 function toast(msg){
   let el=document.getElementById('toast');
@@ -2684,7 +2588,10 @@ document.addEventListener('click',ev=>{
   }
   if(act==='edhrec'){ loadEdhrec(t.dataset.force==='1'); return; }
   if(act==='combos'){ loadCombos(true); return; }
-  if(act==='saveNow'){ save();
+  if(act==='saveDialog'){ openSaveDialog(); return; }
+  if(act==='saveNow'){
+    if(saveState==='desactive'){ toast('Sauvegarde désactivée : réactivez-la pour enregistrer.'); return; }
+    save();
     toast(saveState==='ok'?'Données enregistrées dans ce navigateur.'
          :(saveState==='off'?"Stockage indisponible ici : téléchargez le fichier et ouvrez-le depuis votre disque."
                             :`Enregistrement incomplet : ${saveError}`)); return; }
@@ -2703,7 +2610,8 @@ document.addEventListener('click',ev=>{
       '<p>La collection, le deck, le panier et les préférences enregistrés dans ce navigateur seront supprimés. L\'atelier repartira de sa collection de démonstration.</p>',
       '<button class="btn" value="cancel">Annuler</button><button class="btn danger" id="okWipeSave" value="ok">Effacer</button>');
     document.getElementById('okWipeSave').onclick=()=>{
-      try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+      try{ localStorage.removeItem(STORE_KEY); localStorage.removeItem(STORE_OFF); }catch(e){}
+      if(saveState==='desactive'){ saveState='ok'; dernierEtatSignale='ok'; }
       S.collection=new Map(); S.deck=new Map(); S.commander=null;
       S.edhrec={slug:null,status:'idle',data:null,error:null};
       seedCollection();
@@ -2741,6 +2649,15 @@ document.addEventListener('click',ev=>{
   }
   if(act==='moreB'){ S.limitB+=PAGE; renderB(); return; }
   if(act==='addCard'){ openAdd(t.dataset.cible||'collection'); return; }
+  if(act==='addPick'){
+    const c=find(name); if(!c) return;
+    const qi=document.getElementById('addQ');
+    const q=Math.max(1,parseInt(qi&&qi.value,10)||1);
+    const st=document.getElementById('addStock');
+    ajouterCarte(c,q,t.dataset.cible||'collection',!!(st&&st.checked));
+    majResultats(t.dataset.cible||'collection');   // les compteurs se mettent à jour
+    return;
+  }
   if(act==='ownIt'){
     const c=find(name); if(!c) return;
     const manque=(S.deck.get(name)||0)-(S.collection.get(name)||0);
@@ -2785,6 +2702,7 @@ function withFocus(fn){
 }
 document.addEventListener('input',ev=>{
   const t=ev.target;
+  if(t.dataset.recherche){ majResultats(t.dataset.recherche); return; }
   if(t.id==='csbRelay'){ S.csbRelay=t.value.trim(); scheduleSave(); return; }
   if(t.id==='q'){ S.search=t.value; S.limitB=PAGE; withFocus(()=>{renderB();renderC();renderD();renderF();renderTop();}); return; }
   if(t.dataset.cust){ const k=t.dataset.cust;
@@ -2816,6 +2734,7 @@ document.addEventListener('change',ev=>{
    18. PERSISTANCE — stockage local du navigateur, sans serveur ni base
    ===================================================================== */
 const STORE_KEY='mtg-atelier-v1';
+const STORE_OFF='mtg-atelier-sans-sauvegarde';
 const storageOK=(()=>{ try{
   localStorage.setItem('__mtg_test','1'); localStorage.removeItem('__mtg_test'); return true;
 }catch(e){ return false; } })();
@@ -2844,7 +2763,7 @@ function ecrire(payload){
   localStorage.setItem(STORE_KEY,JSON.stringify(payload));
 }
 function save(){
-  if(!storageOK) return;
+  if(!storageOK||saveState==='desactive') return;
   const snap=snapshot();
   try{ ecrire(snap); saveState='ok'; saveError=''; }
   catch(err){
@@ -2866,7 +2785,7 @@ function save(){
   }
   if(saveState==='ok') dernierEtatSignale='ok';
 }
-function scheduleSave(){ if(!storageOK) return; clearTimeout(saveTimer); saveTimer=setTimeout(save,700); }
+function scheduleSave(){ if(!storageOK||saveState==='desactive') return; clearTimeout(saveTimer); saveTimer=setTimeout(save,700); }
 
 function restore(d){
   if(!d||d.v!==1) return false;
@@ -2905,13 +2824,76 @@ function chargerSauvegarde(){
 }
 function pillSauvegarde(){
   const t={ok:'Sauvegarde locale',partiel:'Sauvegarde allégée',plein:'Sauvegarde saturée',
-            off:'Sans sauvegarde',corrompu:'Sauvegarde illisible'}[saveState]||'Sauvegarde';
-  const col={ok:'var(--ok)',partiel:'var(--warn)',plein:'var(--bad)',off:'var(--dim2)',corrompu:'var(--bad)'}[saveState];
-  return `<span class="pill" id="savePill" title="${esc(saveError||'Les données restent dans ce navigateur, sur cet appareil.')}">
-    <span class="dot" style="background:${col}"></span> ${t}</span>`;
+            off:'Sans sauvegarde',desactive:'Sauvegarde désactivée',corrompu:'Sauvegarde illisible'}[saveState]||'Sauvegarde';
+  const col={ok:'var(--ok)',partiel:'var(--warn)',plein:'var(--bad)',off:'var(--dim2)',
+             desactive:'var(--dim2)',corrompu:'var(--bad)'}[saveState];
+  return `<button class="pill" id="savePill" data-act="saveDialog" style="cursor:pointer"
+    title="${esc(saveError||'Cliquez pour gérer la sauvegarde locale')}">
+    <span class="dot" style="background:${col}"></span> ${t}</button>`;
 }
 
-const sauvegardeInitiale=chargerSauvegarde();
+function corpsSauvegarde(){
+  const etat={
+    ok:'Vos données sont enregistrées dans ce navigateur, à chaque modification.',
+    partiel:`Enregistrement allégé : ${esc(saveError||'espace limité')}.`,
+    plein:`Enregistrement impossible : ${esc(saveError||'espace saturé')}.`,
+    off:"Ce navigateur refuse le stockage local ici. Téléchargez le fichier et ouvrez-le depuis votre disque.",
+    desactive:"La sauvegarde est désactivée : rien n'est écrit sur cet appareil, et tout sera perdu au rechargement.",
+    corrompu:'La sauvegarde existante est illisible et a été ignorée.'
+  }[saveState]||'';
+  const taille=(()=>{ try{ const v=localStorage.getItem(STORE_KEY); return v?Math.round(v.length/1024)+' Ko':'aucune donnée'; }catch(e){ return '—'; } })();
+  return `<div class="small">${etat}</div>
+    <div class="small muted">Les données ne quittent jamais cet appareil : ni serveur, ni compte. Un autre navigateur ne les verra pas — utilisez l'export pour les transporter.
+      ${saveState==='desactive'?'':`<br>Espace occupé : ${taille}.`}</div>
+    <label class="row small" style="gap:8px;margin-top:4px">
+      <input type="checkbox" id="saveSwitch" ${saveState==='desactive'?'':'checked'} ${storageOK?'':'disabled'}>
+      Enregistrer mes données sur cet appareil
+    </label>
+    <div class="small muted">Décochez sur un ordinateur qui n'est pas le vôtre : les données déjà enregistrées sont effacées immédiatement, et plus rien n'est écrit ensuite.</div>
+    <div class="row" style="gap:6px;margin-top:6px">
+      <button type="button" class="btn sm" data-act="saveNow">Enregistrer maintenant</button>
+      <button type="button" class="btn sm" data-act="saveExport">Exporter un fichier</button>
+      <label class="btn sm" for="saveFile" style="margin:0;cursor:pointer">Restaurer un fichier</label>
+      <input id="saveFile" type="file" accept="application/json,.json" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+      <button type="button" class="btn sm danger" data-act="saveWipe">Effacer les données locales</button>
+    </div>`;
+}
+function openSaveDialog(){
+  openDialog('Sauvegarde locale',corpsSauvegarde(),'<button class="btn" value="ok">Fermer</button>');
+  const sw=document.getElementById('saveSwitch');
+  if(sw) sw.addEventListener('change',ev=>{
+    if(ev.target.checked){
+      try{ localStorage.removeItem(STORE_OFF); }catch(e){}
+      saveState='ok'; save();
+      toast('Sauvegarde réactivée : vos données sont enregistrées sur cet appareil.');
+    }else{
+      try{ localStorage.removeItem(STORE_KEY); localStorage.setItem(STORE_OFF,'1'); }catch(e){}
+      saveState='desactive'; dernierEtatSignale='desactive';
+      toast("Sauvegarde désactivée et données effacées de cet appareil.");
+    }
+    renderTop();
+    document.getElementById('dlgBody').innerHTML=corpsSauvegarde();
+    brancherRestauration();
+  });
+  brancherRestauration();
+}
+function brancherRestauration(){
+  const sf=document.getElementById('saveFile');
+  if(!sf) return;
+  sf.addEventListener('change',async ev=>{
+    const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+    try{
+      const d=JSON.parse(await f.text());
+      if(!restore(d)) throw new Error('format non reconnu');
+      renderAll(); save();
+      toast(`Sauvegarde restaurée : ${collectionCards().reduce((n,e)=>n+e.qty,0)} exemplaires, deck de ${deckSize()} cartes.`);
+    }catch(err){ toast(`Fichier illisible : ${err.message||'format invalide'}.`); }
+  });
+}
+let sansSauvegarde=false;
+try{ sansSauvegarde=storageOK&&localStorage.getItem(STORE_OFF)==='1'; }catch(e){}
+if(sansSauvegarde){ saveState='desactive'; dernierEtatSignale='desactive'; }
+const sauvegardeInitiale=sansSauvegarde?null:chargerSauvegarde();
 if(!(sauvegardeInitiale&&restore(sauvegardeInitiale))) seedCollection();
 renderAll();
 loadSymbology();
