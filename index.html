@@ -75,9 +75,10 @@ section.sec{border:1px solid var(--line);border-radius:var(--r);background:var(-
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .field{display:flex;flex-direction:column;gap:4px}
 label.lab{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim2)}
-input[type=text],input[type=number],select,textarea{
-  background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0
+input:not([type=checkbox]):not([type=radio]):not([type=file]),select,textarea{
+  background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0
 }
+input::placeholder,textarea::placeholder{color:var(--dim2);opacity:1}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--brass);outline-offset:1px}
 .btn{
   background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:7px 12px;font-size:13.5px
@@ -962,7 +963,7 @@ const S={
   search:'', typeFilter:'', sort:'cmc', view:'grid',
   graphSource:'collection', showImplicit:true, focusNode:null,
   budget:{total:30,perCard:12,condition:'GD',lang:'any',sellerType:'any',country:'any'},
-  selected:null, selectedCtx:'collection', limitB:200, enriching:false, images:true, imagesFailed:false,
+  selected:null, selectedCtx:'collection', limitB:200, typesOuverts:{}, enriching:false, images:true, imagesFailed:false,
   edhrec:{slug:null,status:'idle',data:null,error:null},
   csb:{sig:null,status:'idle',data:null,error:null},
   csbRelay:''
@@ -2136,10 +2137,17 @@ function listeSuggestions(){
           <span class="small muted">« ${esc(NODE[S.focusNode]?NODE[S.focusNode].label:'')} » en section D</span></h4>
         <div class="list">${graphPicks.slice(0,8).map(s=>sugRow(s)).join('')}</div>
       </div>`:''}
-    ${sug.length?TYPE_ORDER.filter(t=>byType[t]).map(t=>`
-      <div class="group"><h4>${t} <span class="small muted">${byType[t].length} propositions</span></h4>
-        <div class="list">${byType[t].slice(0,6).map(s=>sugRow(s)).join('')}</div>
-      </div>`).join('')
+    ${sug.length?TYPE_ORDER.filter(t=>byType[t]).map(t=>{
+      const ouvert=!!S.typesOuverts[t], total=byType[t].length;
+      const max=ouvert?Math.min(total,80):6;
+      return `<div class="group"><h4>${t} <span class="small muted">${total} proposition${total>1?'s':''}</span></h4>
+        <div class="list">${byType[t].slice(0,max).map(s=>sugRow(s)).join('')}</div>
+        ${total>6?`<div style="text-align:center;margin-top:8px">
+          <button class="btn sm" data-act="expandType" data-type="${esc(t)}">${ouvert?'Réduire à 6':`Afficher les ${total-6} autres`}</button>
+          ${ouvert&&total>max?`<div class="small muted" style="margin-top:4px">${total-max} proposition(s) supplémentaires non listées.</div>`:''}
+        </div>`:''}
+      </div>`;
+    }).join('')
       :'<div class="empty">Aucune suggestion. Ajoutez des cartes à la collection, élargissez les couleurs ou augmentez le budget.</div>'}
     ${(S.csb.status==='cors'||S.csb.status==='error')?`<div class="small muted" style="margin-bottom:6px">
       Commander Spellbook injoignable (${esc(S.csb.error||'')}) : les étiquettes « combo » sont absentes.
@@ -2605,7 +2613,7 @@ function openAdd(cible){
   openDialog(versDeck?'Ajouter une carte au deck':'Ajouter une carte à la collection',
     `<div class="row" style="align-items:flex-end">
        <div class="field" style="flex:1;min-width:180px"><label class="lab" for="addN">Rechercher</label>
-         <input id="addN" data-recherche="${cible}" placeholder="nom, type ou texte de la carte…" autocomplete="off"></div>
+         <input id="addN" type="text" data-recherche="${cible}" placeholder="nom de la carte…" autocomplete="off"></div>
        <div class="field"><label class="lab" for="addQ">Exemplaires</label>
          <input id="addQ" type="number" min="1" value="1" style="width:90px"></div>
      </div>
@@ -2779,6 +2787,12 @@ document.addEventListener('click',ev=>{
     return;
   }
   if(act==='moreB'){ S.limitB+=PAGE; renderB(); return; }
+  if(act==='expandType'){
+    const ty=t.dataset.type;
+    S.typesOuverts[ty]=!S.typesOuverts[ty];
+    refreshSuggestions();
+    return;
+  }
   if(act==='addCard'){ openAdd(t.dataset.cible||'collection'); return; }
   if(act==='addScry'){
     const sc=scryRes.get(norm(name)); if(!sc) return;
