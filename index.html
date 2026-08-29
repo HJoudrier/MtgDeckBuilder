@@ -800,6 +800,7 @@ function analyze(card){
 function categories(card){
   const c=new Set(), a=card.an, t=card.type.toLowerCase(), tx=(card.text||'').toLowerCase();
   const has=id=>a.abilities.some(x=>x.to.includes(id));
+  if(card.isToken) return c;   // un jeton ne compte dans aucun rôle du deck
   if(/creature/.test(t)) c.add('creatures');
   if(/land/.test(t)) c.add('terrains');
   if(has('MANA')||has('RAMP')||has('TRESOR')||has('REDUCTION')) if(!/^basic land/.test(t)) c.add('ramp');
@@ -838,12 +839,14 @@ function buildCard(name,cost,type,price,text){
   const pt=(card.text||'').match(/(?:^|\s)(\d+)\/(\d+)(?![^.]{0,40}token)/);
   card.force=pt?+pt[1]:null;   // approximation : la vraie force vient de Scryfall
   card.sousTypes=((card.type||'').split('—')[1]||'').toLowerCase().split(/\s+/).filter(Boolean);
+  const tf=String(card.type).split(' // ')[0];
+  // un jeton ne se lance pas depuis la main : il forme sa propre catégorie
+  card.isToken=/\btoken\b/i.test(tf);
+  card.isCreature=/creature/i.test(tf)&&!card.isToken;
+  card.isLand=/land/i.test(tf)&&!card.isToken;
+  card.isLegendaryCreature=/legendary creature/i.test(tf)&&!card.isToken;
   card.an=analyze(card);
   card.cats=categories(card);
-  const tf=String(card.type).split(' // ')[0];
-  card.isCreature=/creature/i.test(tf);
-  card.isLand=/land/i.test(tf);
-  card.isLegendaryCreature=/legendary creature/i.test(tf);
   return card;
 }
 function indexCard(card){
@@ -889,6 +892,7 @@ function commandantsPossibles(){
 }
 function mainType(c){
   const t=c.type.toLowerCase().split(' // ')[0];
+  if(c.isToken||/\btoken\b/.test(t)) return 'Jeton';
   if(t.includes('land')) return 'Terrain';
   if(t.includes('creature')) return 'Créature';
   if(t.includes('instant')) return 'Éphémère';
@@ -898,7 +902,7 @@ function mainType(c){
   if(t.includes('planeswalker')) return 'Planeswalker';
   return 'Autre';
 }
-const TYPE_ORDER=['Créature','Éphémère','Rituel','Artefact','Enchantement','Planeswalker','Terrain','Autre'];
+const TYPE_ORDER=['Créature','Éphémère','Rituel','Artefact','Enchantement','Planeswalker','Terrain','Jeton','Autre'];
 
 /* =====================================================================
    5. ÉTAT
@@ -1509,6 +1513,8 @@ function legality(){
   if(n<f.size) msgs.push(`Il manque ${f.size-n} carte(s) pour atteindre ${f.size}.`);
   deckEntries().forEach(e=>{ if(e.qty>f.maxCopies && !/^Basic Land/i.test(e.card.type)) msgs.push(`${e.card.name} : ${e.qty} copies pour ${f.maxCopies} autorisée(s).`); });
   if(f.commander&&!S.commander) msgs.push('Aucun commandant désigné.');
+  const jetons=deckEntries().filter(e=>e.card.isToken);
+  if(jetons.length) msgs.push(`${jetons.length} jeton(s) dans le deck (${jetons.slice(0,3).map(e=>e.card.name).join(', ')}) : un jeton ne se joue pas depuis la main.`);
   deckEntries().forEach(e=>{
     const possede=S.collection.get(e.card.name)||0;
     if(e.qty>possede&&S.budget.total<=0)
@@ -1987,11 +1993,13 @@ function currentSuggestions(){
   });
 
   const pool=[];
-  filtered().forEach(e=>{ if(availableFor(e.card)>0 && (S.deck.get(e.card.name)||0)<f.maxCopies) pool.push({card:e.card,source:'collection'}); });
+  filtered().forEach(e=>{ if(e.card.isToken) return;   // un jeton ne se joue pas depuis la main
+    if(availableFor(e.card)>0 && (S.deck.get(e.card.name)||0)<f.maxCopies) pool.push({card:e.card,source:'collection'}); });
   // cartes hors collection : uniquement si un budget est réellement ouvert
   const budgetLeft=S.budget.total-spent();
   if(S.budget.total>0&&S.budget.perCard>0&&budgetLeft>0){
     DB.forEach(c=>{
+      if(c.isToken) return;
       if(S.collection.has(c.name)&&(S.collection.get(c.name)||0)>0) return;
       if(!colorOK(c)) return;
       if((S.deck.get(c.name)||0)>=f.maxCopies) return;
