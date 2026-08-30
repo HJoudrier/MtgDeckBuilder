@@ -1151,7 +1151,7 @@ const S={
   search:'', typeFilter:'', sort:'cmc', view:'grid',
   graphSource:'collection', showImplicit:true, focusNode:null,
   budget:{total:30,perCard:12,condition:'GD',lang:'any',sellerType:'any',country:'any'},
-  selected:null, selectedCtx:'collection', limitB:200, limiteType:{}, exploreEtat:'', exploreSig:null, explorePages:2, enriching:false, images:true, imagesFailed:false,
+  selected:null, selectedCtx:'collection', limitB:200, limiteType:{}, exploreEtat:'', exploreSig:null, exploreMax:6000, exploreTotal:0, exploreCharge:0, exploreReste:false, enriching:false, images:true, imagesFailed:false,
   edhrec:{slug:null,status:'idle',data:null,error:null},
   csb:{sig:null,status:'idle',data:null,error:null},
   csbRelay:''
@@ -2115,9 +2115,7 @@ function requeteCatalogue(){
   const legal={edh:'commander',standard:'standard',limite:'',perso:''}[S.format]||'';
   return [legal?`legal:${legal}`:'', `id<=${id}`, '-is:token', '-t:basic'].filter(Boolean).join(' ');
 }
-function signatureCatalogue(){
-  return requeteCatalogue()+'|'+S.explorePages;
-}
+function signatureCatalogue(){ return requeteCatalogue(); }
 async function chargerCatalogue(){
   if(typeof fetch!=='function'){ S.exploreEtat='hors-ligne'; return; }
   const sig=signatureCatalogue();
@@ -2125,22 +2123,28 @@ async function chargerCatalogue(){
   S.exploreEtat='chargement'; renderF();
   const q=requeteCatalogue();
   let url='https://api.scryfall.com/cards/search?order=edhrec&unique=cards&q='+encodeURIComponent(q);
-  let pages=0, ajoutees=0;
+  let charge=0, ajoutees=0;
   try{
-    while(url&&pages<S.explorePages){
+    while(url&&charge<S.exploreMax){
       const r=await fetch(url);
-      if(r.status===404){ S.exploreEtat='aucune'; renderF(); return; }
+      if(r.status===404){ S.exploreEtat='aucune'; S.exploreTotal=0; renderF(); return; }
       if(!r.ok) throw new Error('HTTP '+r.status);
       const j=await r.json();
+      if(typeof j.total_cards==='number') S.exploreTotal=j.total_cards;
       (j.data||[]).forEach(sc=>{
         const avant=find(sc.name);
         applyScryfall(sc, avant&&avant.unknown?avant:(avant||null), !!(avant&&!avant.unknown));
         const c=find(sc.name);
         if(c&&!(S.collection.get(c.name)>0)){ c.externe=true; ajoutees++; }
+        charge++;
       });
-      pages++;
+      S.exploreCharge=charge;
       url=j.has_more?j.next_page:null;
-      if(url){ toast(`Catalogue : ${pages*175} cartes examinées…`); await new Promise(r2=>setTimeout(r2,120)); }
+      S.exploreReste=!!url;
+      if(url&&charge<S.exploreMax){
+        if(charge%700===0) renderF();                       // avancement visible sans saturer le rendu
+        await new Promise(r2=>setTimeout(r2,110));           // cadence demandée par Scryfall
+      }
     }
     S.exploreEtat='ok';
   }catch(err){
@@ -2292,16 +2296,30 @@ function currentSuggestions(){
   return res.filter(r=>r.score>0).sort((a,b)=>b.score-a.score);
 }
 function ligneCatalogue(){
-  const hors=DB.filter(c=>c.externe&&!(S.collection.get(c.name)>0)).length;
+  const dispo=S.exploreTotal?` sur ${S.exploreTotal.toLocaleString('fr-FR')} légales dans vos couleurs`:'';
+  if(S.exploreEtat==='chargement')
+    return `<div class="small muted" style="margin-top:4px">Chargement du catalogue Scryfall : ${S.exploreCharge.toLocaleString('fr-FR')} carte(s)${dispo}…</div>`;
   const msg={
-    chargement:'Chargement des cartes existantes depuis Scryfall…',
     'hors-ligne':'Scryfall injoignable : seules vos cartes sont proposées.',
     erreur:'Scryfall a répondu par une erreur ; seules vos cartes sont proposées.',
     aucune:'Aucune carte ne correspond à ce format et à cette identité couleur.'
   }[S.exploreEtat];
   if(msg) return `<div class="small muted" style="margin-top:4px">${esc(msg)}</div>`;
+  const hors=DB.filter(c=>c.externe&&!(S.collection.get(c.name)>0)).length;
   if(!hors) return '';
-  return `<div class="small muted" style="margin-top:4px">Suggestions puisées dans votre collection et dans ${hors} carte(s) existantes, filtrées par les couleurs de la section A, le prix maximum par carte et le budget restant.</div>`;
+  // combien de cartes chargées sont écartées par le prix maximum ou le budget restant ?
+  const reste=S.budget.total-spent();
+  let ecartees=0;
+  DB.forEach(c=>{
+    if(!c.externe||(S.collection.get(c.name)||0)>0||c.isToken||!colorOK(c)) return;
+    const o=bestOffer(c);
+    if(!o||o.price>reste) ecartees++;
+  });
+  return `<div class="small muted" style="margin-top:4px">
+    Catalogue : ${S.exploreCharge.toLocaleString('fr-FR')} carte(s) chargées${dispo}.
+    ${ecartees?`${ecartees.toLocaleString('fr-FR')} écartée(s) par le prix maximum (${eur(S.budget.perCard)}) ou le budget restant (${eur(Math.max(0,reste))}).`:''}
+    ${S.exploreReste?`<button class="btn sm" data-act="catalogueSuite" style="margin-left:6px">Charger la suite</button>`:''}
+  </div>`;
 }
 function panneauEdhrec(){
   const f=fmt();
@@ -3020,6 +3038,7 @@ document.addEventListener('click',ev=>{
     document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
   }
   if(act==='edhrec'){ loadEdhrec(t.dataset.force==='1'); return; }
+  if(act==='catalogueSuite'){ S.exploreMax+=10000; S.exploreSig=null; chargerCatalogue(); return; }
 
   if(act==='combos'){ loadCombos(true); return; }
   if(act==='saveDialog'){ openSaveDialog(); return; }
