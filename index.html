@@ -129,6 +129,21 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cardT.sel{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass) inset}
 .cimg{width:100%;aspect-ratio:488/680;object-fit:cover;border-radius:6px;background:#191524;display:block}
 .cardT.withimg{padding:5px;gap:4px}
+.cardT.achat{border-color:var(--bad);box-shadow:0 0 0 1px rgba(211,87,63,.35) inset}
+.sugrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:10px}
+.sugT{display:flex;flex-direction:column;gap:5px;padding:8px;border:1px solid var(--line);border-radius:10px;
+  background:linear-gradient(160deg,var(--panel2),var(--bg2));cursor:pointer;text-align:left;position:relative}
+.sugT:hover{border-color:var(--brass)}
+.sugT.lie{border-color:var(--brass-d)}
+.sugT.hors{border-color:#6d3030}
+.sugT .cimg{border-radius:7px}
+.sugT .titre{font-family:var(--display);font-size:13.5px;line-height:1.2}
+.sugT .why{font-size:11px;color:var(--dim);line-height:1.35}
+.sugT .bas{margin-top:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+@media (max-width:640px){ .sugrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px} }
+.cardT .achatbadge{position:absolute;right:5px;bottom:5px;font-size:9.5px;padding:1px 5px;border-radius:4px;
+  background:rgba(20,16,30,.88);border:1px solid var(--bad);color:#e39a90}
+.lrow.achat{border-color:var(--bad)}
 .cardT.withimg .cname{font-size:12px}
 .detail .dimg{float:right;width:min(190px,38%);border-radius:9px;margin:0 0 8px 12px;background:#191524}
 .imgwrap{position:relative}
@@ -443,47 +458,93 @@ const NODES = [
   ['PIOCHE','Pioche','cartes'],
   ['IMPULSE','Filtrage / impulsion','cartes'],
   ['TUTEUR','Tuteur','cartes'],
+  ['CYCLE','Cycle','cartes'],
+  ['REVELATION','Révélation','cartes'],
+  ['MAIN_VIDE','Main vide','cartes'],
   ['RECURSION','Récursion','cartes'],
   ['MILL','Meule','cimetiere'],
   ['DEFAUSSE','Défausse','cimetiere'],
+  ['MIS_AU_CIMETIERE','Mise au cimetière','cimetiere'],
   ['SACRIFICE','Sacrifice','cimetiere'],
   ['MORT','Mort de créature','cimetiere'],
   ['MORT_SOI','Mort de cette carte','cimetiere'],
+  ['LTB','Départ du champ de bataille','cimetiere'],
   ['JETON','Jeton de créature','board'],
   ['MARQUEUR','Marqueur +1/+1','board'],
+  ['MARQUEUR_M1M1','Marqueur -1/-1','board'],
+  ['MARQUEUR_AUTRE','Autre marqueur','board'],
+  ['MARQUEUR_RETIRE','Retrait de marqueur','board'],
+  ['PROLIFERATION','Prolifération','board'],
   ['COPIE','Copie','board'],
   ['BLINK','Blink','board'],
   ['ETB','Arrivée en jeu','board'],
   ['ETB_SOI','Arrivée de cette carte','board'],
+  ['ETB_CIMETIERE','Arrivée depuis le cimetière','board'],
+  ['ETB_EXIL','Arrivée depuis l\'exil','board'],
+  ['ETB_BIBLIO','Arrivée depuis la bibliothèque','board'],
+  ['TRANSFORMATION','Transformation','board'],
+  ['FACE_VISIBLE','Retournement face visible','board'],
+  ['ATTACHEMENT','Attachement','board'],
+  ['GAIN_CONTROLE','Gain de contrôle','board'],
   ['TERRAIN','Terrain (landfall)','mana'],
+  ['TERRAIN_JOUE','Terrain joué','mana'],
   ['RAMP','Ramp','mana'],
   ['TRESOR','Trésor','mana'],
   ['MANA','Mana','mana'],
+  ['MANA_DEPENSE','Mana dépensé','mana'],
   ['UNTAP','Dégagement','mana'],
   ['REDUCTION','Réduction de coût','mana'],
+  ['ENERGIE','Énergie','mana'],
+  ['EXPERIENCE','Expérience','mana'],
   ['LANCEMENT','Lancement de sort','sorts'],
+  ['LANCEMENT_SOI','Lancement de cette carte','sorts'],
+  ['SORT_RESOUT','Résolution de sort','sorts'],
   ['CONTRESORT','Contresort','sorts'],
+  ['DEVIENT_CIBLE','Devient une cible','sorts'],
+  ['CAPACITE_ACTIVEE','Capacité activée','sorts'],
+  ['CAPACITE_DECLENCHEE','Capacité déclenchée','sorts'],
   ['DESTRUCTION','Destruction','interaction'],
   ['EXIL','Exil','interaction'],
   ['BOUNCE','Renvoi en main','interaction'],
+  ['MIS_EN_BIBLIO','Mise en bibliothèque','interaction'],
   ['DEGATS','Dégâts','interaction'],
+  ['DEGATS_SUBIS','Blessures subies','interaction'],
   ['ENGAGEMENT','Engagement','stax'],
   ['STAX','Stax','stax'],
   ['TAXE','Taxe','stax'],
   ['PERTE_VIE','Perte de vie','vie'],
   ['GAIN_VIE','Gain de vie','vie'],
+  ['POISON','Poison','vie'],
+  ['SEUIL_VIE','Seuil de points de vie','vie'],
   ['ATTAQUE','Attaque','combat'],
+  ['ATTAQUE_SEULE','Attaque seule','combat'],
+  ['BLOCAGE','Blocage','combat'],
+  ['DEVIENT_BLOQUEE','Devient bloquée','combat'],
+  ['DEGATS_COMBAT_JOUEUR','Blessures de combat au joueur','combat'],
+  ['DEGATS_COMBAT_CREATURE','Blessures de combat à une créature','combat'],
+  ['DEBUT_COMBAT','Début du combat','combat'],
+  ['FIN_COMBAT','Fin du combat','combat'],
   ['BOOST','Boost temporaire','combat'],
   ['VOL','Vol','combat'],
   ['PIETINEMENT','Piétinement','combat'],
   ['MENACE','Menace','combat'],
   ['IMBLOCABLE','Imblocable','combat'],
   ['CELERITE','Célérité','combat'],
+  ['VIGILANCE','Vigilance','combat'],
   ['INDESTRUCTIBLE','Indestructible','protection'],
   ['LINCEUL','Linceul','protection'],
   ['PROTECTION','Protection / ward','protection'],
   ['ENTRETIEN','Entretien','timing'],
+  ['ETAPE_PIOCHE','Étape de pioche','timing'],
+  ['PHASE_PRINCIPALE','Phase principale','timing'],
   ['FIN_TOUR','Fin du tour','timing'],
+  ['DEBUT_TOUR','Début du tour','timing'],
+  ['TOUR_SUPPLEMENTAIRE','Tour supplémentaire','timing'],
+  ['JOUR_NUIT','Jour et nuit','timing'],
+  ['CHAPITRE_SAGA','Chapitre de saga','timing'],
+  ['MONARQUE','Monarque / initiative','timing'],
+  ['DONJON','Donjon','timing'],
+  ['DE','Dé ou pile ou face','timing'],
   ['STATIQUE','Effet continu','timing']
 ];
 const NODE = {}; NODES.forEach((n,i)=>NODE[n[0]]={id:n[0],label:n[1],group:n[2],idx:i});
@@ -495,7 +556,16 @@ const IMPLICIT = [
   ['SACRIFICE','MORT_SOI'],['DESTRUCTION','MORT_SOI'],
   ['UNTAP','ENGAGEMENT'],['TRESOR','MANA'],['RAMP','MANA'],['TERRAIN','RAMP'],['MANA','LANCEMENT'],
   ['SACRIFICE','MORT'],['DESTRUCTION','MORT'],['MILL','RECURSION'],['DEFAUSSE','RECURSION'],
-  ['MARQUEUR','BOOST'],['REDUCTION','LANCEMENT'],['RECURSION','LANCEMENT'],['ETB','SACRIFICE']
+  ['MARQUEUR','BOOST'],['REDUCTION','LANCEMENT'],['RECURSION','LANCEMENT'],['ETB','SACRIFICE'],
+  // ce que les règles du jeu enchaînent d'elles-mêmes
+  ['MORT','MIS_AU_CIMETIERE'],['DEFAUSSE','MIS_AU_CIMETIERE'],['MILL','MIS_AU_CIMETIERE'],
+  ['MIS_AU_CIMETIERE','RECURSION'],['MORT','LTB'],['EXIL','LTB'],['BOUNCE','LTB'],['DESTRUCTION','LTB'],
+  ['ETB_CIMETIERE','ETB'],['ETB_EXIL','ETB'],['ETB_BIBLIO','ETB'],['TERRAIN_JOUE','TERRAIN'],
+  ['ATTAQUE','DEGATS_COMBAT_JOUEUR'],['DEGATS_COMBAT_JOUEUR','DEGATS'],['DEGATS_COMBAT_CREATURE','DEGATS'],
+  ['BLOCAGE','DEGATS_COMBAT_CREATURE'],['DEGATS','DEGATS_SUBIS'],['DEGATS_COMBAT_JOUEUR','PERTE_VIE'],
+  ['PROLIFERATION','MARQUEUR'],['MARQUEUR_RETIRE','MARQUEUR'],['CYCLE','DEFAUSSE'],['CYCLE','PIOCHE'],
+  ['LANCEMENT','SORT_RESOUT'],['SORT_RESOUT','ETB'],['CAPACITE_ACTIVEE','ENGAGEMENT'],
+  ['MANA_DEPENSE','MANA'],['ENERGIE','MANA']
 ];
 
 /* ---- règles d'extraction : effets produits ---- */
@@ -543,7 +613,33 @@ const EFFECT_RULES = [
   ['PROTECTION', /protection from|\bward\b|can't be the target/],
   ['ENGAGEMENT', /\btaps? (?:target|all|each|up to)|enter(?:s)? tapped|doesn't untap|tapped and attacking/],
   ['STAX',       /can't (?:cast|attack|block|activate|be cast)|skip your|skip their|no maximum hand size|can't be regenerated/],
-  ['TAXE',       /costs? \{\d+\} more|unless (?:that player|they) pays?|may pay \{\d+\}|unless that player pays/]
+  ['TAXE',       /costs? \{\d+\} more|unless (?:that player|they) pays?|may pay \{\d+\}|unless that player pays/],
+  // vocabulaire complété
+  ['MIS_AU_CIMETIERE', /put into (?:a|your|their) graveyard from anywhere/],
+  ['LTB',            /leaves the battlefield/],
+  ['PROLIFERATION',  /\bproliferate\b/],
+  ['MARQUEUR_M1M1',  /-1\/-1 counter|\bwither\b/],
+  ['MARQUEUR_AUTRE', /(?:charge|loyalty|lore|oil|stun|shield|blood|verse|quest|page|time) counter/],
+  ['MARQUEUR_RETIRE',/remove (?:a|an|one|two|\d+|x|all) .{0,25}counters?/],
+  ['TRANSFORMATION', /\btransforms?\b|\bdaybound\b|\bnightbound\b/],
+  ['FACE_VISIBLE',   /turn(?:s|ed)? .{0,20}face up|\bdisguise\b|\bmorph\b|\bmanifest\b/],
+  ['ATTACHEMENT',    /\battach\b|becomes attached|\bequip\b/],
+  ['GAIN_CONTROLE',  /gains? control of/],
+  ['ENERGIE',        /\{e\}|energy counter/],
+  ['EXPERIENCE',     /experience counter/],
+  ['MONARQUE',       /\bmonarch\b|take the initiative|\binitiative\b/],
+  ['DONJON',         /\bdungeon\b|\bventure\b/],
+  ['DE',             /roll (?:a|two|\d+) .{0,12}(?:die|dice)|flip a coin/],
+  ['POISON',         /poison counter|\btoxic\b|\binfect\b/],
+  ['CYCLE',          /\bcycl(?:e|es|ing)\b/],
+  ['REVELATION',     /reveals? (?:a|an|the top|your hand|cards)/],
+  ['MIS_EN_BIBLIO',  /(?:shuffles?|puts?) .{0,40}into .{0,15}library|on top of .{0,20}library/],
+  ['VIGILANCE',      /\bvigilance\b/],
+  ['DEGATS_COMBAT_JOUEUR',  /deals combat damage to a player/],
+  ['DEGATS_COMBAT_CREATURE',/deals combat damage to a creature/],
+  ['TERRAIN_JOUE',   /play an additional land|plays? a land/],
+  ['SEUIL_VIE',      /life total is \d+ or less|has \d+ or less life/],
+  ['MAIN_VIDE',      /no cards in (?:your|their) hand/]
 ];
 /* ---- règles d'extraction : déclencheurs ---- */
 const TRIGGER_RULES = [
@@ -562,7 +658,49 @@ const TRIGGER_RULES = [
   ['DEGATS',   /deals damage|deals combat damage/],
   ['MANA',     /tapped for mana/],
   ['ENGAGEMENT',/activate an ability|becomes tapped/],
-  ['TRESOR',   /treasure/]
+  ['TRESOR',   /treasure/],
+  // vocabulaire complété
+  ['ETB_CIMETIERE',['enters'],/enters .{0,40}from (?:a|your|their) graveyard/],
+  ['ETB_EXIL',     ['enters'],/enters .{0,40}from exile/],
+  ['ETB_BIBLIO',   ['enters'],/enters .{0,40}from .{0,20}library/],
+  ['LTB',          /leaves the battlefield/],
+  ['MIS_AU_CIMETIERE',/put into (?:a|your|their) graveyard from anywhere/],
+  ['TERRAIN_JOUE', /plays? a land/],
+  ['BLOCAGE',      /\bblocks\b/],
+  ['DEVIENT_BLOQUEE',/becomes blocked/],
+  ['ATTAQUE_SEULE',/attacks alone/],
+  ['DEGATS_COMBAT_JOUEUR',/deals combat damage to a player|deals damage to a player/],
+  ['DEGATS_COMBAT_CREATURE',/deals combat damage to a creature/],
+  ['DEBUT_COMBAT', /beginning of combat/],
+  ['FIN_COMBAT',   /end of combat/],
+  ['ETAPE_PIOCHE', /draw step/],
+  ['PHASE_PRINCIPALE',/main phase/],
+  ['DEBUT_TOUR',   /beginning of .{0,25}turn/],
+  ['TOUR_SUPPLEMENTAIRE',/extra turn/],
+  ['CYCLE',        /\bcycles?\b/],
+  ['REVELATION',   /reveals?/],
+  ['PERTE_VIE',    /loses? life|loses? \d+ life/],
+  ['DEGATS_SUBIS', /is dealt damage/],
+  ['POISON',       /poison counter/],
+  ['SEUIL_VIE',    /life total is \d+ or less|has \d+ or less life/],
+  ['MAIN_VIDE',    /no cards in (?:your|their) hand/],
+  ['MARQUEUR_RETIRE',/remove .{0,25}counters?/],
+  ['DEVIENT_CIBLE',/becomes the target/],
+  ['CAPACITE_ACTIVEE',/activates? an ability/],
+  ['CAPACITE_DECLENCHEE',/triggered ability .{0,25}triggers/],
+  ['TRANSFORMATION',/transforms?/],
+  ['FACE_VISIBLE', /turned face up/],
+  ['ATTACHEMENT',  /becomes attached/],
+  ['GAIN_CONTROLE',/gains? control/],
+  ['ENERGIE',      /\{e\}/],
+  ['EXPERIENCE',   /experience counter/],
+  ['MONARQUE',     /\bmonarch\b|\binitiative\b/],
+  ['DONJON',       /\bdungeon\b|\bventure\b/],
+  ['DE',           /roll .{0,12}(?:die|dice)|flip a coin/],
+  ['SORT_RESOUT',  /spell resolves/],
+  ['CHAPITRE_SAGA',/\bchapter\b/],
+  ['JOUR_NUIT',    /day becomes night|night becomes day/],
+  ['LANCEMENT_SOI',/cast this spell/]
 ];
 
 /* =====================================================================
@@ -588,7 +726,10 @@ function splitAbilities(text){
 }
 function matchAll(rules, s){
   const out=[];
-  for(const [c,re] of rules){ if(re.test(s) && !out.includes(c)) out.push(c); }
+  for(const r of rules){
+    const c=r[0], re=r.length===3?r[2]:r[1];
+    if(re.test(s) && !out.includes(c)) out.push(c);
+  }
   return out;
 }
 /* Un déclencheur ne se résume pas à son concept : il porte un sujet, une portée
@@ -634,6 +775,9 @@ function qualifieProduction(clause,card){
   const q={portee:'vous',jeton:false,force:null,cmc:null,types:[],sorts:[]};
   if(/each opponent|target opponent|opponents|target player/.test(clause)) q.portee='adversaire';
   if(/token/.test(clause)) q.jeton=true;
+  // destination : le champ de bataille, ou seulement la main ?
+  if(/battlefield/.test(clause)) q.enJeu=true;
+  else if(/to (?:your|its owner's|their owner's) hand/.test(clause)) q.enJeu=false;
   let m;
   if((m=clause.match(/(\d+)\/(\d+)[^.]{0,40}token/))) q.force=+m[1];
   if((m=clause.match(/\b(goblin|zombie|elf|spirit|dragon|angel|wizard|vampire|plant|insect|golem|drake|bird|human|cat|faerie|treasure)\b/)))
@@ -659,8 +803,14 @@ function compat(prod,trig){
   if(q.portee==='adversaire'&&p.portee!=='adversaire') return 0;
   if(q.portee==='vous'&&p.portee==='adversaire') return 0;
   let k=1;
+  // le sujet du déclencheur doit correspondre à ce que la production met en jeu :
+  // « quand une créature arrive » n'est pas alimenté par l'arrivée d'un artefact
+  const TYPES=['creature','land','artifact','enchantment','planeswalker','battle','instant','sorcery'];
+  if(q.sujet&&TYPES.includes(q.sujet)&&(p.sujets||[]).length&&!p.sujets.includes(q.sujet)) return 0;
   for(const f of (q.filtres||[])){
     if(f.t==='nonjeton'&&p.jeton) return 0;            // un jeton ne déclenche pas « non-jeton »
+    // un seuil de force ne concerne que les créatures : rien d'autre n'a de force
+    if((f.t==='force')&&!p.creature&&!p.jeton&&(p.sujets||[]).length) return 0;
     if(f.t==='force'&&p.force!=null){
       if(f.op==='≥'&&p.force<f.v) return 0;
       if(f.op==='≤'&&p.force>f.v) return 0;
@@ -679,7 +829,7 @@ function compat(prod,trig){
     } else if(f.t==='type'){
       if(p.types&&p.types.length) { if(!p.types.some(t=>t.toLowerCase().startsWith(f.v.slice(0,4)))) return 0; }
       else k*=0.5;
-    } else if(f.t==='force'||f.t==='cmc'){ k*=0.6; }   // restriction non vérifiable
+    } else if(f.t==='force'||f.t==='cmc'){ k*=0.35; }  // valeur inconnue : lien signalé mais peu fiable
     else if(f.t==='unefois') k*=0.8;
   }
   return k;
@@ -696,10 +846,47 @@ function coupeDeclencheur(body){
   }
   return premiere;
 }
+/* Un coût n'est pas un déclencheur, mais il produit des évènements et en consomme d'autres.
+   C'est là que coûts et déclencheurs se recoupent : « sacrifiez une créature : » consomme
+   une créature en jeu et produit sacrifice, mort et départ du champ de bataille. */
+const COUTS=[
+  {id:'ENGAGER_SOI',   motif:/\{t\}/,                                        source:'ENGAGEMENT', produit:['ENGAGEMENT'],                              consomme:['UNTAP']},
+  {id:'DEGAGER_SOI',   motif:/\{q\}/,                                        source:'UNTAP',      produit:['UNTAP'],                                   consomme:[]},
+  {id:'SAC_CREATURE',  motif:/sacrifice (?:a|an|another|two|three|x|\d)\b/,   source:'SACRIFICE',  produit:['SACRIFICE','MORT','LTB','MIS_AU_CIMETIERE'],consomme:['ETB','JETON'], exutoire:true},
+  {id:'SAC_SOI',       motif:/sacrifice/,                                     source:'SACRIFICE',  produit:['SACRIFICE','MORT_SOI','MORT','LTB','MIS_AU_CIMETIERE'], consomme:[]},
+  {id:'DEFAUSSER',     motif:/discard/,                                       source:'DEFAUSSE',   produit:['DEFAUSSE','MIS_AU_CIMETIERE'],             consomme:['PIOCHE'], exutoire:true},
+  {id:'PAYER_VIE',     motif:/pay \d+ life|pays? \d+ life/,                   source:'PERTE_VIE',  produit:['PERTE_VIE'],                               consomme:['GAIN_VIE']},
+  {id:'EXILER_CIM',    motif:/exile .{0,40}from (?:your|a) graveyard/,        source:'EXIL',       produit:['EXIL'],                                    consomme:['MIS_AU_CIMETIERE','MILL','DEFAUSSE','MORT'], exutoire:true},
+  {id:'MEULER_SOI',    motif:/mill \d+ cards?/,                               source:'MILL',       produit:['MILL','MIS_AU_CIMETIERE'],                 consomme:[]},
+  {id:'RETIRER_MARQ',  motif:/remove (?:a|an|one|two|\d+|x) .{0,25}counters?/, source:'MARQUEUR_RETIRE', produit:['MARQUEUR_RETIRE'],                   consomme:['MARQUEUR','MARQUEUR_AUTRE','PROLIFERATION'], exutoire:true},
+  {id:'RENVOYER_MAIN', motif:/return .{0,40}you control to (?:its|their) owner's hand/, source:'BOUNCE', produit:['BOUNCE','LTB'],                   consomme:['ETB']},
+  {id:'REVELER',       motif:/reveal (?:a|an) .{0,25}card/,                   source:'REVELATION', produit:['REVELATION'],                              consomme:[]},
+  {id:'ENERGIE',       motif:/pay .{0,12}\{e\}/,                              source:'ENERGIE',    produit:['ENERGIE'],                                 consomme:['ENERGIE'], exutoire:true},
+  {id:'ENGAGER_AUTRES',motif:/\bconvoke\b|\bcrew\b|tap .{0,30}untapped creature/, source:'ENGAGEMENT', produit:['ENGAGEMENT'],                     consomme:['ETB','JETON'], exutoire:true},
+  {id:'MANA',          motif:/\{\d|\{[wubrgcx]/,                              source:'MANA',       produit:[],                                          consomme:['MANA']}
+];
+function coutsDe(cost,selfNames){
+  const trouves=[];
+  for(const c of COUTS){
+    if(!c.motif.test(cost)) continue;
+    if(c.id==='SAC_CREATURE'&&selfNames.some(n=>n&&cost.includes(n))) continue;   // « sacrifiez cette carte »
+    if(c.id==='SAC_SOI'&&trouves.some(x=>x.id==='SAC_CREATURE')) continue;
+    trouves.push(c);
+  }
+  return trouves;
+}
 function refineTriggers(list,clause){
   let out=[...list];
-  if(out.includes('TERRAIN')) out=out.filter(c=>c!=='ETB');
-  if(/dies|graveyard from the battlefield/.test(clause)) out=out.filter(c=>c!=='ETB');
+  // le déclencheur le plus précis chasse le plus général
+  if(out.includes('TERRAIN')) out=out.filter(c=>c!=='ETB'&&c!=='TERRAIN_JOUE');
+  if(out.some(c=>c==='ETB_CIMETIERE'||c==='ETB_EXIL'||c==='ETB_BIBLIO')) out=out.filter(c=>c!=='ETB');
+  if(/dies|graveyard from the battlefield/.test(clause)) out=out.filter(c=>c!=='ETB'&&c!=='LTB'&&c!=='MIS_AU_CIMETIERE');
+  if(out.includes('DEGATS_COMBAT_JOUEUR')||out.includes('DEGATS_COMBAT_CREATURE'))
+    out=out.filter(c=>c!=='DEGATS'&&c!=='DEGATS_SUBIS'&&c!=='PERTE_VIE');
+  if(out.includes('CYCLE')) out=out.filter(c=>c!=='DEFAUSSE'&&c!=='PIOCHE');
+  if(out.includes('ATTAQUE_SEULE')) out=out.filter(c=>c!=='ATTAQUE');
+  if(out.includes('LANCEMENT_SOI')) out=out.filter(c=>c!=='LANCEMENT');
+  if(out.includes('MARQUEUR_RETIRE')) out=out.filter(c=>c!=='MARQUEUR'&&c!=='MARQUEUR_AUTRE');
   return out;
 }
 function scopeOf(s){
@@ -712,6 +899,11 @@ function refineEffects(list, clause){
   if(out.includes('BLINK')) out=out.filter(c=>c!=='EXIL'&&c!=='BOUNCE'&&c!=='RECURSION');
   if(/(?:doesn't|don't|can't) untap/.test(clause)) out=out.filter(c=>c!=='UNTAP');
   if(out.includes('RECURSION')&&/graveyard/.test(clause)) out=out.filter(c=>c!=='BOUNCE');
+  if(out.includes('CYCLE')) out=out.filter(c=>c!=='DEFAUSSE');
+  if(out.includes('DEGATS_COMBAT_JOUEUR')||out.includes('DEGATS_COMBAT_CREATURE')) out=out.filter(c=>c!=='DEGATS');
+  if(out.includes('MARQUEUR_RETIRE')) out=out.filter(c=>c!=='MARQUEUR_AUTRE');
+  if(out.includes('PROLIFERATION')) out=out.filter(c=>c!=='MARQUEUR_AUTRE');
+  if(out.includes('TERRAIN_JOUE')&&out.includes('RAMP')) out=out.filter(c=>c!=='TERRAIN_JOUE');
   if(/you may pay \{/.test(clause)&&!/unless|costs? \{\d+\} more/.test(clause)) out=out.filter(c=>c!=='TAXE');
   if(out.includes('RAMP')) out=out.filter(c=>c!=='TUTEUR'||/for a card|for a creature|for an instant|for an artifact/.test(clause));
   if(out.includes('TRESOR')) out=out.filter(c=>c!=='JETON'||/creature token/.test(clause));
@@ -764,21 +956,16 @@ function analyze(card){
         const act = body.match(/^([^:]{1,70}):\s*(.+)$/);
         if(act && !/^[a-z ]*enchant /.test(body)){
           const cost=act[1], eff0=act[2];
-          const src=[];
-          if(/\{t\}/.test(cost)) src.push('ENGAGEMENT');
-          if(/sacrifice/.test(cost)) src.push('SACRIFICE');
-          if(/discard/.test(cost)) src.push('DEFAUSSE');
-          if(/pay \d+ life|\d+ life/.test(cost)) src.push('PERTE_VIE');
-          if(/\{\d|\{[wubrgcx]/.test(cost)) src.push('MANA');
+          const couts=coutsDe(cost,selfNames);
+          const src=couts.map(c=>c.source);
           if(!src.length) src.push('STATIQUE');
           const eff = refineEffects(matchAll(EFFECT_RULES,eff0),eff0);
-          const sacOutlet=/sacrifice (?:a|an|another|two|three|x|\d)\b/.test(cost)
-                          && !selfNames.some(n=>n&&cost.includes(n));
-          const selfSac=/sacrifice/.test(cost)&&!sacOutlet;
+          const sacOutlet=couts.some(c=>c.id==='SAC_CREATURE');
+          const selfSac=couts.some(c=>c.id==='SAC_SOI');
           const q={portee:'vous',sujet:sacOutlet?'creature':(/discard/.test(cost)?'card':''),filtres:[],mode:'cout'};
-          ctx={from:src,scope:'self',kind:'activee',hook:false,q,pq:qualifieProduction(eff0,card)};
+          ctx={from:src,scope:'self',kind:'activee',hook:false,q,pq:qualifieProduction(eff0,card),couts};
           if(eff.length) abilities.push({kind:'activee',from:src,to:eff,scopeTrig:'self',scopeEff:scopeOf(eff0),
-                                         text:body,sacOutlet,selfSac,q,pq:ctx.pq});
+                                         text:body,sacOutlet,selfSac,q,pq:ctx.pq,couts});
           return;
         }
         const eff = refineEffects(matchAll(EFFECT_RULES,body),body);
@@ -803,32 +990,33 @@ function analyze(card){
   })));
 
   const triggers=[], produces=[];
-  const qVide={portee:'vous',jeton:false,force:null,cmc:null,types:[],sorts:[]};
+  const qVide={portee:'vous',jeton:false,force:null,cmc:null,types:[],sorts:[],sujets:[],creature:false};
   const ajouteT=(c,scope,q,mode)=>{ if(c==='STATIQUE'||c==='MANA') return;
     triggers.push({c,scope,q:{...(q||{portee:'vous',sujet:'',filtres:[]}),mode:mode||(q&&q.mode)||'declencheur'}}); };
   const ajouteP=(c,scope,q)=>produces.push({c,scope,q:{...qVide,...(q||{})}});
   abilities.forEach(a=>{
     const hooks = a.hook
       ? a.from
-      : a.from.filter(f=>a.kind==='activee'&&((f==='SACRIFICE'&&a.sacOutlet)||f==='DEFAUSSE'));
+      : a.from.filter(f=>a.kind==='activee'&&(a.couts||[]).some(c=>c.exutoire&&c.source===f));
     hooks.forEach(f=>ajouteT(f,a.scopeTrig,a.q,a.kind==='activee'?'cout':'declencheur'));
+    // ce qu'un coût consomme devient une accroche : le producteur de la ressource s'y branche
+    (a.couts||[]).forEach(c=>{ if(c.exutoire) c.consomme.forEach(x=>ajouteT(x,'self',a.q,'cout')); });
     a.to.forEach(t=>ajouteP(t,a.scopeEff,a.pq));
     // un exutoire à sacrifice fait mourir des créatures : c'est une production d'évènement
-    if(a.kind==='activee'&&a.sacOutlet){
-      ajouteP('SACRIFICE','self',{types:['creature']});
-      ajouteP('MORT','self',{types:['creature']});
-    }
-    if(a.kind==='activee'&&a.selfSac&&/creature/i.test(card.type))
-      ajouteP('MORT','self',{force:card.force,cmc:card.cmc});
-    // se défausser pour payer un coût, c'est produire l'évènement « défausse »
-    if(a.kind==='activee'&&a.from.includes('DEFAUSSE')) ajouteP('DEFAUSSE','self',{});
+    // payer un coût produit des évènements que d'autres cartes attendent
+    (a.couts||[]).forEach(c=>{
+      if(c.id==='SAC_SOI'&&!/creature/i.test(card.type)) return;   // un artefact sacrifié ne « meurt » pas
+      c.produit.forEach(x=>ajouteP(x,'self',c.id==='SAC_CREATURE'?{types:['creature']}:{force:card.force,cmc:card.cmc}));
+    });
   });
   // la permanente qui arrive en jeu : on connaît son coût et, pour une créature, sa force
-  if(isPermanent) ajouteP('ETB','self',{jeton:false,force:card.force,cmc:card.cmc,types:card.sousTypes||[]});
+  if(isPermanent) ajouteP('ETB','self',{jeton:false,force:card.force,cmc:card.cmc,
+    types:card.sousTypes||[],sujets:card.typesSort||[],creature:!!card.isCreature});
   // toute carte jouable depuis la main est lancée : c'est l'évènement qu'attendent
   // les capacités « à chaque fois que vous lancez un sort de créature », etc.
   if(!card.isLand&&!card.isToken)
-    ajouteP('LANCEMENT','self',{jeton:false,cmc:card.cmc,sorts:card.typesSort||[],types:card.sousTypes||[]});
+    ajouteP('LANCEMENT','self',{jeton:false,cmc:card.cmc,sorts:card.typesSort||[],
+      types:card.sousTypes||[],sujets:card.typesSort||[],force:card.force,creature:!!card.isCreature});
   return {abilities,edges,triggers,produces,isSpell,isPermanent};
 }
 
@@ -879,7 +1067,7 @@ function buildCard(name,cost,type,price,text){
   // un jeton ne se lance pas depuis la main : il forme sa propre catégorie
   card.isToken=/\btoken\b/i.test(tf);
   // ce que la carte est en tant que sort, pour les déclencheurs « quand vous lancez … »
-  card.typesSort=['creature','instant','sorcery','artifact','enchantment','planeswalker','battle']
+  card.typesSort=['creature','instant','sorcery','artifact','enchantment','planeswalker','battle','land']
     .filter(t=>new RegExp(t,'i').test(tf));
   card.isCreature=/creature/i.test(tf)&&!card.isToken;
   card.isLand=/land/i.test(tf)&&!card.isToken;
@@ -963,7 +1151,7 @@ const S={
   search:'', typeFilter:'', sort:'cmc', view:'grid',
   graphSource:'collection', showImplicit:true, focusNode:null,
   budget:{total:30,perCard:12,condition:'GD',lang:'any',sellerType:'any',country:'any'},
-  selected:null, selectedCtx:'collection', limitB:200, typesOuverts:{}, enriching:false, images:true, imagesFailed:false,
+  selected:null, selectedCtx:'collection', limitB:200, limiteType:{}, exploreEtat:'', exploreSig:null, explorePages:2, enriching:false, images:true, imagesFailed:false,
   edhrec:{slug:null,status:'idle',data:null,error:null},
   csb:{sig:null,status:'idle',data:null,error:null},
   csbRelay:''
@@ -1102,10 +1290,12 @@ function cardTile(e,ctx){
   const c=e.card, sel=S.selected===c.name&&S.selectedCtx===ctx;
   const tags=[...c.cats].filter(x=>x!=='creatures'&&x!=='terrains').slice(0,3);
   const withImg=S.images&&c.img;
-  return `<div class="cardT ${withImg?'withimg':''} ${sel?'sel':''}" data-card="${esc(c.name)}" data-ctx="${ctx}">
+  // dans le deck, une carte non possédée est à acheter : on la signale visuellement
+  const manque=ctx==='deck'?Math.max(0,e.qty-(S.collection.get(c.name)||0)):0;
+  return `<div class="cardT ${withImg?'withimg':''} ${sel?'sel':''} ${manque?'achat':''}" data-card="${esc(c.name)}" data-ctx="${ctx}">
     ${withImg?'':`<span class="stripe" style="background:${stripeColor(c)}"></span>`}
     ${withImg
-      ? `<div class="imgwrap"><img class="cimg" src="${esc(c.img)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.remove()"></div>
+      ? `<div class="imgwrap"><img class="cimg" src="${esc(c.imgN||c.img)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.remove()"></div>
          <div class="cname">${esc(c.name)}</div>`
       : `<div style="display:flex;gap:4px;align-items:flex-start">
           <div class="cname">${esc(c.name)}</div>
@@ -1131,16 +1321,19 @@ function cardTile(e,ctx){
                ? `<button class="btn sm" data-act="setCmd" data-name="${esc(c.name)}" title="Désigner comme commandant">★</button>`:''}
            </span>`}
     ${ctx==='deck'&&S.commander===c.name?'<span class="cmdbadge">commandant</span>':''}
+    ${manque?`<span class="achatbadge">${manque===e.qty?'à acheter':manque+' à acheter'}</span>`:''}
     </div>
   </div>`;
 }
 function cardRow(e,ctx){
   const c=e.card;
-  return `<div class="lrow" data-card="${esc(c.name)}" data-ctx="${ctx}">
+  const manque=ctx==='deck'?Math.max(0,e.qty-(S.collection.get(c.name)||0)):0;
+  return `<div class="lrow ${manque?'achat':''}" data-card="${esc(c.name)}" data-ctx="${ctx}">
     <span class="dot" style="background:${stripeColor(c)}"></span>
     <span class="cname">${esc(c.name)}</span>
     <span class="costs">${manaHTML(c,true)}</span>
     <span class="mono small muted">${c.unknown?'à compléter':esc(mainType(c))}</span>
+    ${manque?`<span class="tag" style="border-color:var(--bad);color:#e39a90">${manque} à acheter</span>`:''}
     <span class="mono small">${eur(c.price)}</span>
     ${ctx==='collection'
       ? `<span class="qty"><button class="btn sm" data-act="dec" data-name="${esc(c.name)}">−</button><b>${e.qty}</b><button class="btn sm" data-act="inc" data-name="${esc(c.name)}">+</button><button class="btn sm" data-act="toDeck" data-name="${esc(c.name)}">▲</button></span>`
@@ -1382,15 +1575,17 @@ function svgGraph(g){
   }
   NODES.forEach(n=>{
     const id=n[0],p=pos[id],d=g.deg[id]||0;
+    const on=S.focusNode===id;
     const r=6+Math.min(16,Math.sqrt(d)*2.6);
     const col=GROUPS[n[2]].color;
-    const on=S.focusNode===id;
     dots+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${col}" fill-opacity="${d?0.9:0.25}"
       stroke="${on?'#fff':'#171322'}" stroke-width="${on?3:1.5}" data-node="${id}" style="cursor:pointer">
       <title>${esc(n[1])} — ${d} connexion(s)</title></circle>`;
+    // avec un vocabulaire large, nommer les nœuds inertes rendrait le cercle illisible
+    if(!d&&!on) return;
     const deg2=p.a*180/Math.PI, flip=Math.cos(p.a)<0;
     const lx=cx+(R+22)*Math.cos(p.a), ly=cy+(R+22)*Math.sin(p.a);
-    labels+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" fill="${d?'#e8e3f2':'#6d6486'}" font-size="15" font-family="ui-sans-serif,system-ui"
+    labels+=`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" fill="${d?'#e8e3f2':'#6d6486'}" font-size="14" font-family="ui-sans-serif,system-ui"
       text-anchor="${flip?'end':'start'}" dominant-baseline="middle"
       transform="rotate(${flip?deg2+180:deg2},${lx.toFixed(1)},${ly.toFixed(1)})" data-node="${id}" style="cursor:pointer">${esc(n[1])}</text>`;
   });
@@ -1433,21 +1628,34 @@ function renderD(){
     <div class="legend">${Object.entries(GROUPS).map(([k,v])=>`<span class="lg"><span class="dot" style="background:${v.color}"></span>${v.label}</span>`).join('')}</div>
     ${focusInfo}
     <div style="margin-top:8px"><button class="btn" data-act="graphToF">${S.focusNode?'Proposer des cartes branchées sur ce nœud':'Voir les suggestions d\'ajout'}</button></div>
-    <div class="small muted" style="margin-top:8px">Chaque arc va d'un déclencheur vers un effet produit. Une carte peut poser plusieurs arcs. Les arcs pointillés sont les enchaînements permis par les règles (un jeton qui arrive déclenche les effets d'arrivée en jeu, un trésor sacrifié produit du mana…).</div>`;
+    <div class="small muted" style="margin-top:8px">${NODES.length} évènements possibles ; seuls ceux que vos cartes touchent sont nommés. Cliquez un nœud pour le détail.
+      Chaque arc va d'un déclencheur vers un effet produit. Une carte peut poser plusieurs arcs. Les arcs pointillés sont les enchaînements permis par les règles (un jeton qui arrive déclenche les effets d'arrivée en jeu, un trésor sacrifié produit du mana…).</div>`;
   document.getElementById('hintD').textContent=`${cards.length} cartes · ${g.edges.size} arcs`;
 }
 
 /* =====================================================================
    12. SYNERGIES & EXPLICATIONS
    ===================================================================== */
-const EQUIV={RAMP:['TERRAIN'],TERRAIN:['RAMP'],JETON:['ETB'],COPIE:['ETB'],BLINK:['ETB'],
-             RECURSION:['ETB'],TRESOR:['MANA'],MARQUEUR:['BOOST']};
+const EQUIV={RAMP:['TERRAIN','TERRAIN_JOUE'],TERRAIN:['RAMP'],TERRAIN_JOUE:['TERRAIN'],
+             JETON:['ETB'],COPIE:['ETB'],BLINK:['ETB'],RECURSION:['ETB','ETB_CIMETIERE'],
+             TRESOR:['MANA'],MARQUEUR:['BOOST'],PROLIFERATION:['MARQUEUR'],
+             MORT:['MIS_AU_CIMETIERE','LTB'],DEFAUSSE:['MIS_AU_CIMETIERE'],MILL:['MIS_AU_CIMETIERE'],
+             EXIL:['LTB'],BOUNCE:['LTB'],DESTRUCTION:['MORT','LTB'],
+             DEGATS:['DEGATS_SUBIS'],DEGATS_COMBAT_JOUEUR:['DEGATS','DEGATS_SUBIS','PERTE_VIE'],
+             DEGATS_COMBAT_CREATURE:['DEGATS','DEGATS_SUBIS'],CYCLE:['DEFAUSSE','PIOCHE']};
 function feeds(concept){ return [concept,...(EQUIV[concept]||[])]; }
+/* L'équivalence dépend parfois du détail de la production : une récursion vers la main
+   ne vaut pas une arrivée en jeu, et ne peut donc pas alimenter un déclencheur d'ETB. */
+function feedsDe(p){
+  let l=feeds(p.c);
+  if(p.c==='RECURSION'&&!(p.q&&p.q.enJeu===true)) l=l.filter(x=>x!=='ETB'&&x!=='ETB_CIMETIERE');
+  return l;
+}
 function croise(prods,trigs,dir,out){
   prods.forEach(p=>{ if(p.scope!=='self') return;
     trigs.forEach(t=>{
       if(t.scope!=='self'&&t.q.portee!=='adversaire') return;
-      if(!feeds(p.c).includes(t.c)) return;
+      if(!feedsDe(p).includes(t.c)) return;
       const k=compat(p,t);
       if(k>0) out.push({concept:t.c,dir,k,detail:libelleQual(t.q)});
     });
@@ -1554,7 +1762,8 @@ function ficheHTML(card){
   }
   if(!pourquoi.length) pourquoi.push("aucun branchement repéré avec le deck actuel : elle vaut surtout pour son effet propre");
 
-  const nomLien=l=>NODE[l.concept].label.toLowerCase()+(l.detail?` (${l.detail})`:'')+(l.k<1?' — sous réserve':'');
+  const nomLien=l=>NODE[l.concept].label.toLowerCase()+(l.detail?` (${l.detail})`:'')
+    +(l.k<=0.4?' — non vérifiable, force ou coût inconnus':(l.k<1?' — sous réserve':''));
   const lien=p=>{
     const donne=[...new Set(p.links.filter(l=>l.dir==='ab').map(nomLien))];
     const recoit=[...new Set(p.links.filter(l=>l.dir==='ba').map(nomLien))];
@@ -1566,7 +1775,7 @@ function ficheHTML(card){
   const noeuds=[...new Set(card.an.edges.flatMap(e=>[e.from,e.to]))];
 
   return `<div class="fiche">
-      ${S.images&&(card.imgN||card.img)?`<img class="visu" src="${esc(card.imgN||card.img)}" alt="${esc(card.name)}">`:''}
+      ${S.images&&(card.imgL||card.imgN||card.img)?`<img class="visu" src="${esc(card.imgL||card.imgN||card.img)}" alt="${esc(card.name)}">`:''}
       <div class="meta">
         <div class="costs" style="margin-bottom:4px">${manaHTML(card)}</div>
         <div class="small muted">${esc(card.type)}${card.cmc?` · CMC ${card.cmc}`:''} · ${eur(card.price)}${card.price?' (tendance Cardmarket)':''}</div>
@@ -1676,7 +1885,7 @@ function zoneCommandant(){
   const ident=cmd.identity.length?cmd.identity:['C'];
   const horsIdentite=deckEntries().filter(e=>e.card.identity.some(x=>!cmd.identity.includes(x))).length;
   return `<div class="cmdbox">
-    ${S.images&&(cmd.imgN||cmd.img)?`<img class="visu" src="${esc(cmd.imgN||cmd.img)}" alt="${esc(cmd.name)}">`
+    ${S.images&&(cmd.imgL||cmd.imgN||cmd.img)?`<img class="visu" src="${esc(cmd.imgL||cmd.imgN||cmd.img)}" alt="${esc(cmd.name)}">`
       :`<div class="vide">${esc(cmd.name)}</div>`}
     <div class="corps">
       <h3 style="font-size:16px">${esc(cmd.name)}</h3>
@@ -1711,6 +1920,8 @@ function renderE(){
       <span class="pill">CMC moyen <b>${avg.toFixed(2)}</b></span>
       <span class="pill">Valeur <b>${eur(price)}</b></span>
       ${S.commander?`<span class="pill">Commandant <b>${esc(S.commander)}</b></span>`:''}
+      ${(()=>{const a=aAcheter();const n=a.reduce((x,l)=>x+l.qty,0);
+        return n?`<span class="pill" style="border-color:var(--bad)"><span class="dot" style="background:var(--bad)"></span> ${n} à acheter · ${eur(spent())}</span>`:'';})()}
       <div class="seg" style="margin-left:auto">
         <button data-view="grid" aria-pressed="${S.view==='grid'}">Grille</button>
         <button data-view="list" aria-pressed="${S.view==='list'}">Liste</button>
@@ -1893,6 +2104,51 @@ function libelleCombo(c,carteCourante){
   const autres=c.cartes.filter(n=>!carteCourante||norm(n)!==norm(carteCourante.name));
   return `${autres.join(' + ')}${c.produit.length?` → ${c.produit.slice(0,3).join(', ')}`:''}`;
 }
+/* Exploration : au-delà de la collection, on charge un vivier de cartes réelles
+   depuis Scryfall — celles qui sont légales dans le format et dans l'identité couleur —
+   pour les noter avec le même moteur que les cartes possédées. */
+function requeteCatalogue(){
+  const f=fmt();
+  const cmd=S.commander?find(S.commander):null;
+  const ident=(cmd?cmd.identity:[...S.colors].filter(c=>c!=='C'));
+  const id=ident.length?ident.join('').toLowerCase():'c';
+  const legal={edh:'commander',standard:'standard',limite:'',perso:''}[S.format]||'';
+  return [legal?`legal:${legal}`:'', `id<=${id}`, '-is:token', '-t:basic'].filter(Boolean).join(' ');
+}
+function signatureCatalogue(){
+  return requeteCatalogue()+'|'+S.explorePages;
+}
+async function chargerCatalogue(){
+  if(typeof fetch!=='function'){ S.exploreEtat='hors-ligne'; return; }
+  const sig=signatureCatalogue();
+  S.exploreSig=sig;
+  S.exploreEtat='chargement'; renderF();
+  const q=requeteCatalogue();
+  let url='https://api.scryfall.com/cards/search?order=edhrec&unique=cards&q='+encodeURIComponent(q);
+  let pages=0, ajoutees=0;
+  try{
+    while(url&&pages<S.explorePages){
+      const r=await fetch(url);
+      if(r.status===404){ S.exploreEtat='aucune'; renderF(); return; }
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      (j.data||[]).forEach(sc=>{
+        const avant=find(sc.name);
+        applyScryfall(sc, avant&&avant.unknown?avant:(avant||null), !!(avant&&!avant.unknown));
+        const c=find(sc.name);
+        if(c&&!(S.collection.get(c.name)>0)){ c.externe=true; ajoutees++; }
+      });
+      pages++;
+      url=j.has_more?j.next_page:null;
+      if(url){ toast(`Catalogue : ${pages*175} cartes examinées…`); await new Promise(r2=>setTimeout(r2,120)); }
+    }
+    S.exploreEtat='ok';
+  }catch(err){
+    S.exploreEtat=(err instanceof TypeError)?'hors-ligne':'erreur';
+  }
+  renderAll();
+  void ajoutees;
+}
 function currentSuggestions(){
   const deck=deckEntries().map(e=>e.card);
   const f=fmt(), cnt=deckCounts(), tgt=targets();
@@ -1931,7 +2187,7 @@ function currentSuggestions(){
   const push=(m,k,v)=>{ if(!m.has(k)) m.set(k,[]); m.get(k).push(v); };
   deck.forEach(d=>{
     d.an.produces.forEach(pp=>{ if(pp.scope!=='self') return;
-      feeds(pp.c).forEach(k=>push(deckProd,k,{nom:d.name,p:pp})); });
+      feedsDe(pp).forEach(k=>push(deckProd,k,{nom:d.name,p:pp})); });
     d.an.triggers.forEach(tt=>{ if(tt.scope!=='self'&&tt.q.portee!=='adversaire') return;
       push(deckTrig,tt.c,{nom:d.name,t:tt}); });
   });
@@ -1939,7 +2195,7 @@ function currentSuggestions(){
   const pool=[];
   filtered().forEach(e=>{ if(e.card.isToken) return;   // un jeton ne se joue pas depuis la main
     if(availableFor(e.card)>0 && (S.deck.get(e.card.name)||0)<f.maxCopies) pool.push({card:e.card,source:'collection'}); });
-  // cartes hors collection : uniquement si un budget est réellement ouvert
+  // cartes hors collection : le prix maximum par carte et le budget restant font le tri
   const budgetLeft=S.budget.total-spent();
   if(S.budget.total>0&&S.budget.perCard>0&&budgetLeft>0){
     DB.forEach(c=>{
@@ -1948,7 +2204,7 @@ function currentSuggestions(){
       if(!colorOK(c)) return;
       if((S.deck.get(c.name)||0)>=f.maxCopies) return;
       const o=bestOffer(c);
-      if(o&&o.price>0&&o.price<=budgetLeft) pool.push({card:c,source:'achat',offer:o});
+      if(o&&o.price>0&&o.price<=budgetLeft&&!pool.some(x=>x.card===c)) pool.push({card:c,source:'achat',offer:o});
     });
   }
 
@@ -1965,7 +2221,7 @@ function currentSuggestions(){
       if(!ancien||ancien.k<k) linkMap.get(nm).set(cle,{concept,dir,k,detail});
     };
     c.an.produces.forEach(pp=>{ if(pp.scope!=='self') return;
-      feeds(pp.c).forEach(k=>(deckTrig.get(k)||[]).forEach(x=>
+      feedsDe(pp).forEach(k=>(deckTrig.get(k)||[]).forEach(x=>
         addLink(x.nom,k,'ab',compat(pp,x.t),libelleQual(x.t.q)))); });
     c.an.triggers.forEach(tt=>{ if(tt.scope!=='self'&&tt.q.portee!=='adversaire') return;
       (deckProd.get(tt.c)||[]).forEach(x=>
@@ -2035,6 +2291,18 @@ function currentSuggestions(){
   });
   return res.filter(r=>r.score>0).sort((a,b)=>b.score-a.score);
 }
+function ligneCatalogue(){
+  const hors=DB.filter(c=>c.externe&&!(S.collection.get(c.name)>0)).length;
+  const msg={
+    chargement:'Chargement des cartes existantes depuis Scryfall…',
+    'hors-ligne':'Scryfall injoignable : seules vos cartes sont proposées.',
+    erreur:'Scryfall a répondu par une erreur ; seules vos cartes sont proposées.',
+    aucune:'Aucune carte ne correspond à ce format et à cette identité couleur.'
+  }[S.exploreEtat];
+  if(msg) return `<div class="small muted" style="margin-top:4px">${esc(msg)}</div>`;
+  if(!hors) return '';
+  return `<div class="small muted" style="margin-top:4px">Suggestions puisées dans votre collection et dans ${hors} carte(s) existantes, filtrées par les couleurs de la section A, le prix maximum par carte et le budget restant.</div>`;
+}
 function panneauEdhrec(){
   const f=fmt();
   if(!f.commander) return '';
@@ -2069,26 +2337,32 @@ function panneauEdhrec(){
     </div></div>`;
 }
 function sugRow(s){
-  const n=(s.partners||[]).length;
-  return `<div style="border:1px solid ${n?'var(--brass-d)':'var(--line)'};border-radius:8px;padding:8px;background:var(--panel)">
-    <div class="row" style="gap:6px">
-      ${S.images&&s.card.img?`<img src="${esc(s.card.img)}" alt="" style="width:34px;border-radius:3px" loading="lazy">`
-        :`<span class="dot" style="background:${stripeColor(s.card)}"></span>`}
-      <b style="font-family:var(--display)">${esc(s.card.name)}</b>
-      <span class="costs">${manaHTML(s.card,true)}</span>
-      <span class="tag" style="border-color:${n?'var(--brass)':'var(--line2)'};color:${n?'var(--brass)':'var(--dim2)'}"
-        title="Cartes du deck avec lesquelles elle interagit">${n} interaction${n>1?'s':''}</span>
-      ${s.combos&&s.combos.length?`<span class="tag" style="border-color:#a077cf;color:#a077cf" title="Combo répertorié par Commander Spellbook">combo</span>`:''}
-      ${s.edhrec?`<span class="tag" style="border-color:#57c9c4;color:#57c9c4" title="Statistiques EDHREC pour ce commandant">edhrec ${Math.round(s.edhrec.inclusion*100)} % · ${s.edhrec.synergy>=0?'+':'−'}${Math.abs(Math.round(s.edhrec.synergy*100))} %</span>`:''}
-      <span class="mono small muted">score ${s.score.toFixed(1)}</span>
-      <span style="margin-left:auto;display:flex;gap:6px">
-        <button class="btn sm" data-act="fiche" data-name="${esc(s.card.name)}">Détail</button>
-        <button class="btn sm ${s.source==='achat'?'':'pri'}" data-act="${s.source==='achat'?'buy':'toDeck'}" data-name="${esc(s.card.name)}">${s.source==='achat'?'Acheter + ajouter':'Ajouter'}</button>
-      </span>
+  const c=s.card, n=(s.partners||[]).length;
+  const img=S.images&&c.img;
+  return `<div class="sugT ${n?'lie':''} ${s.source!=='collection'?'hors':''}" data-card="${esc(c.name)}" data-ctx="suggestion"
+      title="Cliquez pour la fiche complète">
+    ${img?`<img class="cimg" src="${esc(c.imgN||c.img)}" alt="${esc(c.name)}" loading="lazy" decoding="async" onerror="this.remove()">`:''}
+    <div style="display:flex;gap:4px;align-items:flex-start">
+      <div class="titre">${esc(c.name)}</div>
+      <div class="costs" style="margin-left:auto">${manaHTML(c,true)}</div>
     </div>
-    <div class="why">${s.reasons.slice(0,3).map(esc).join(' · ')||'complète le deck'}</div>
-    ${s.source==='achat'?`<div class="buy">≈ ${eur(s.offer.price)} · ${s.offer.condition} ou mieux · ${s.offer.lang} · ${s.offer.seller}
-      — <a href="${esc(cmLink(s.card))}" target="_blank" rel="noopener" style="color:var(--brass)">voir les offres sur Cardmarket ↗</a></div>`:''}
+    <div class="tags">
+      ${n?`<span class="tag" style="border-color:var(--brass);color:var(--brass)"
+        title="Cartes du deck avec lesquelles elle interagit">${n} interaction${n>1?'s':''}</span>`:''}
+      ${s.source!=='collection'?`<span class="tag" style="border-color:var(--bad);color:#e39a90">hors collection</span>`:''}
+      ${s.combos&&s.combos.length?`<span class="tag" style="border-color:#a077cf;color:#a077cf">combo</span>`:''}
+      ${s.edhrec?`<span class="tag" style="border-color:#57c9c4;color:#57c9c4"
+        title="Taux d'inclusion dans les decks de ce commandant, et synergie par rapport aux autres decks de la même identité couleur">edhrec ${
+        Math.round(s.edhrec.inclusion*100)} % / ${s.edhrec.synergy>=0?'+':'−'}${Math.abs(Math.round(s.edhrec.synergy*100))} %</span>`:''}
+    </div>
+    <div class="why">${esc((s.reasons||[])[0]||'complète le deck')}</div>
+    <div class="bas">
+      <span class="mono small muted">score ${s.score.toFixed(1)}</span>
+      ${s.source==='achat'?`<span class="buy">≈ ${eur(s.offer.price)}</span>`:''}
+      <button class="btn sm ${s.source==='achat'?'':'pri'}" style="margin-left:auto"
+        data-act="${s.source==='achat'?'buy':'toDeck'}" data-name="${esc(c.name)}">
+        ${s.source==='achat'?'Acheter':'Ajouter'}</button>
+    </div>
   </div>`;
 }
 function ligneBudget(){
@@ -2122,6 +2396,7 @@ function panneauAchats(){
       </div>
       <div class="small muted" style="margin-top:6px" id="budLine">${ligneBudget()}</div>
       <div class="small muted" style="margin-top:4px">Prix de référence : tendance Cardmarket, relayée par Scryfall et rafraîchie avec les visuels. L'état, la langue et le type de vendeur ajustent une <b>estimation</b> : les offres réelles se consultent sur la fiche Cardmarket, via le lien de chaque carte.</div>
+      ${ligneCatalogue()}
       <div id="budBuys">${ligneAchats()}</div>
     </div>`;
 }
@@ -2130,21 +2405,22 @@ function listeSuggestions(){
   const graphPicks=S.focusNode?sug.filter(s=>s.graph&&s.graph.includes('noeud')):[];
   const byType={};
   sug.forEach(s=>{ const t=mainType(s.card); (byType[t]=byType[t]||[]).push(s); });
+  visuelsSuggestions(byType);
   const html=`
     ${graphPicks.length?`
       <div class="group" style="border-color:var(--brass-d)">
         <h4>Autour du nœud sélectionné
           <span class="small muted">« ${esc(NODE[S.focusNode]?NODE[S.focusNode].label:'')} » en section D</span></h4>
-        <div class="list">${graphPicks.slice(0,8).map(s=>sugRow(s)).join('')}</div>
+        <div class="sugrid">${graphPicks.slice(0,8).map(s=>sugRow(s)).join('')}</div>
       </div>`:''}
     ${sug.length?TYPE_ORDER.filter(t=>byType[t]).map(t=>{
-      const ouvert=!!S.typesOuverts[t], total=byType[t].length;
-      const max=ouvert?Math.min(total,80):6;
-      return `<div class="group"><h4>${t} <span class="small muted">${total} proposition${total>1?'s':''}</span></h4>
-        <div class="list">${byType[t].slice(0,max).map(s=>sugRow(s)).join('')}</div>
-        ${total>6?`<div style="text-align:center;margin-top:8px">
-          <button class="btn sm" data-act="expandType" data-type="${esc(t)}">${ouvert?'Réduire à 6':`Afficher les ${total-6} autres`}</button>
-          ${ouvert&&total>max?`<div class="small muted" style="margin-top:4px">${total-max} proposition(s) supplémentaires non listées.</div>`:''}
+      const total=byType[t].length, max=Math.min(S.limiteType[t]||6,total), reste=total-max;
+      return `<div class="group"><h4>${t} <span class="small muted">${max} sur ${total}</span></h4>
+        <div class="sugrid">${byType[t].slice(0,max).map(s=>sugRow(s)).join('')}</div>
+        ${total>6?`<div class="row" style="justify-content:center;gap:6px;margin-top:8px">
+          ${reste>0?`<button class="btn sm" data-act="pageType" data-type="${esc(t)}" data-pas="30">Afficher ${Math.min(30,reste)} de plus</button>`:''}
+          ${reste>30?`<button class="btn sm" data-act="pageType" data-type="${esc(t)}" data-pas="tout">Tout afficher (${total})</button>`:''}
+          ${max>6?`<button class="btn sm" data-act="pageType" data-type="${esc(t)}" data-pas="reduire">Réduire</button>`:''}
         </div>`:''}
       </div>`;
     }).join('')
@@ -2158,6 +2434,12 @@ function listeSuggestions(){
     <div class="small muted">Le score combine les branchements avec le deck (un effet produit ici déclenche une capacité là-bas), les rôles manquants, la courbe de mana et la densité de capacités. Les cartes hors collection sont pénalisées et limitées par le budget.
       <br>Pas de connexion à votre compte : Cardmarket n'ouvre plus son API aux nouvelles applications et interdit le partage d'identifiants, et une page web ne peut pas signer les requêtes OAuth sans exposer le secret. L'atelier s'appuie donc sur les prix Cardmarket publiés par Scryfall, et vous renvoie vers la fiche du site pour l'achat.</div>`;
   return {html,sug,graphPicks};
+}
+function visuelsSuggestions(byType){
+  if(!S.images) return;
+  const vus=[];
+  TYPE_ORDER.forEach(t=>{ if(byType[t]) vus.push(...byType[t].slice(0,Math.min(S.limiteType[t]||6,byType[t].length))); });
+  setTimeout(()=>queueImages(vus.map(x=>x.card)),0);
 }
 function majHintF(sug,graphPicks){
   const edhrecCount=sug.filter(x=>x.edhrec).length;
@@ -2178,6 +2460,9 @@ function renderF(){
   majHintF(r.sug,r.graphPicks);
   if(fmt().commander&&S.commander&&typeof fetch==='function'
      && S.edhrec.slug!==edhrecSlug(S.commander) && S.edhrec.status!=='loading') setTimeout(()=>loadEdhrec(),0);
+  // le catalogue se recharge de lui-même quand le format ou l'identité couleur changent
+  if(typeof fetch==='function' && S.budget.total>0 && S.budget.perCard>0
+     && S.exploreEtat!=='chargement' && S.exploreSig!==signatureCatalogue()) setTimeout(()=>chargerCatalogue(),0);
 }
 
 /* =====================================================================
@@ -2274,11 +2559,15 @@ function applyScryfall(sc,requested,imagesOnly){
   let target=(requested&&typeof requested==='object')?requested
             :(BY_NAME[norm(sc.name)]||LOOSE[loose(sc.name)]||(requested?find(requested):null));
   if(target&&(imagesOnly||!target.unknown)){
-    if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img; }
+    if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img;
+              target.imgL=uris.large||uris.png||target.imgN; }
     if(sc.purchase_uris&&sc.purchase_uris.cardmarket) target.cmUrl=sc.purchase_uris.cardmarket;
     if(pr.eur) target.price=parseFloat(pr.eur)||target.price;   // tendance Cardmarket du jour
     const pw=sc.power||(faces&&faces[0]&&faces[0].power);
-    if(pw!=null&&/^\d+$/.test(String(pw))) target.force=+pw;
+    if(pw!=null&&/^\d+$/.test(String(pw))&&target.force!==+pw){
+      target.force=+pw;
+      target.an=analyze(target); target.cats=categories(target);   // les seuils de force en dépendent
+    }
     return true;
   }
   const fresh=buildCard(sc.name,cost,type,price,text);
@@ -2286,13 +2575,18 @@ function applyScryfall(sc,requested,imagesOnly){
   if(typeof sc.cmc==='number') fresh.cmc=sc.cmc;
   const pw=sc.power||(faces&&faces[0]&&faces[0].power);
   if(pw!=null&&/^\d+$/.test(String(pw))) fresh.force=+pw;
+  // la force et la valeur de mana viennent d'arriver : l'analyse doit être refaite,
+  // sinon les seuils « force 4 ou plus » resteraient jugés sur une valeur inconnue
+  fresh.an=analyze(fresh); fresh.cats=categories(fresh);
   if(!target){
-    if(uris){ fresh.img=uris.small||uris.normal; fresh.imgN=uris.normal||uris.large||fresh.img; }
+    if(uris){ fresh.img=uris.small||uris.normal; fresh.imgN=uris.normal||uris.large||fresh.img;
+              fresh.imgL=uris.large||uris.png||fresh.imgN; }
     if(sc.purchase_uris&&sc.purchase_uris.cardmarket) fresh.cmUrl=sc.purchase_uris.cardmarket;
     registerCard(fresh); return true; }
   target=renameCard(target,sc.name);
   Object.assign(target,fresh,{name:target.name});
-  if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img; }
+  if(uris){ target.img=uris.small||uris.normal; target.imgN=uris.normal||uris.large||target.img;
+            target.imgL=uris.large||uris.png||target.imgN; }
   if(sc.purchase_uris&&sc.purchase_uris.cardmarket) target.cmUrl=sc.purchase_uris.cardmarket;
   target.unknown=false;
   return true;
@@ -2633,7 +2927,7 @@ function placerApercu(x,y){
   apercuEl.style.left=Math.max(8,dx)+'px'; apercuEl.style.top=dy+'px';
 }
 function contenuApercu(c){
-  const src=c.imgN||c.img;
+  const src=c.imgL||c.imgN||c.img;
   return src
     ? `<img src="${esc(src)}" alt="${esc(c.name)}">`
     : `<div class="txt"><div class="n">${esc(c.name)}</div>
@@ -2726,6 +3020,7 @@ document.addEventListener('click',ev=>{
     document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
   }
   if(act==='edhrec'){ loadEdhrec(t.dataset.force==='1'); return; }
+
   if(act==='combos'){ loadCombos(true); return; }
   if(act==='saveDialog'){ openSaveDialog(); return; }
   if(act==='saveNow'){
@@ -2787,9 +3082,11 @@ document.addEventListener('click',ev=>{
     return;
   }
   if(act==='moreB'){ S.limitB+=PAGE; renderB(); return; }
-  if(act==='expandType'){
-    const ty=t.dataset.type;
-    S.typesOuverts[ty]=!S.typesOuverts[ty];
+  if(act==='pageType'){
+    const ty=t.dataset.type, pas=t.dataset.pas;
+    if(pas==='reduire') S.limiteType[ty]=6;
+    else if(pas==='tout') S.limiteType[ty]=1e6;
+    else S.limiteType[ty]=(S.limiteType[ty]||6)+parseInt(pas,10);
     refreshSuggestions();
     return;
   }
@@ -2900,10 +3197,12 @@ function snapshot(){
   DB.forEach(c=>{
     const base=BUILTIN.has(norm(c.name));
     if(base){
-      if(c.img||c.cmUrl) enrich.push({n:c.name,p:c.price,g:c.img||'',G:c.imgN||'',u:c.cmUrl||''});
+      if(c.img||c.cmUrl) enrich.push({n:c.name,p:c.price,g:c.img||'',G:c.imgN||'',L:c.imgL||'',u:c.cmUrl||''});
+    }else if(c.externe&&!(S.collection.get(c.name)>0)&&!S.deck.has(c.name)){
+      // vivier d'exploration : rechargeable à la demande, inutile de l'enregistrer
     }else{
       cartes.push({n:c.name,c:c.cost||'—',t:c.type,p:c.price,x:c.text,
-        i:(c.identity||[]).join(''),m:c.cmc,f:c.force,g:c.img||'',G:c.imgN||'',u:c.cmUrl||'',k:c.unknown?1:0});
+        i:(c.identity||[]).join(''),m:c.cmc,f:c.force,g:c.img||'',G:c.imgN||'',L:c.imgL||'',u:c.cmUrl||'',k:c.unknown?1:0});
     }
   });
   return {v:1,date:Date.now(),
@@ -2923,7 +3222,7 @@ function save(){
   catch(err){
     // quota dépassé : on retente sans les visuels ni les textes des cartes importées
     try{
-      const leger={...snap,enrich:[],cartes:snap.cartes.map(c=>({...c,x:'',g:'',G:''}))};
+      const leger={...snap,enrich:[],cartes:snap.cartes.map(c=>({...c,x:'',g:'',G:'',L:''}))};
       ecrire(leger); saveState='partiel'; saveError='visuels et textes importés non conservés (espace insuffisant)';
     }catch(err2){
       saveState='plein'; saveError=err2.message||'espace de stockage saturé';
@@ -2948,15 +3247,15 @@ function restore(d){
     if(!card) card=registerCard(buildCard(o.n,o.c||'—',o.t||'Inconnu',o.p||0,o.x||''));
     if(o.i) card.identity=o.i.split('');
     if(typeof o.m==='number') card.cmc=o.m;
-    if(typeof o.f==='number') card.force=o.f;
-    if(o.g) card.img=o.g; if(o.G) card.imgN=o.G; if(o.u) card.cmUrl=o.u;
+    if(typeof o.f==='number'&&card.force!==o.f){ card.force=o.f; card.an=analyze(card); card.cats=categories(card); }
+    if(o.g) card.img=o.g; if(o.G) card.imgN=o.G; if(o.L) card.imgL=o.L; if(o.u) card.cmUrl=o.u;
     card.unknown=!!o.k;
     if(card.img) card.imgTried=true;
   });
   (d.enrich||[]).forEach(o=>{
     const card=find(o.n); if(!card) return;
     if(o.p) card.price=o.p;
-    if(o.g) card.img=o.g; if(o.G) card.imgN=o.G; if(o.u) card.cmUrl=o.u;
+    if(o.g) card.img=o.g; if(o.G) card.imgN=o.G; if(o.L) card.imgL=o.L; if(o.u) card.cmUrl=o.u;
     if(card.img) card.imgTried=true;
   });
   S.collection=new Map((d.collection||[]).filter(([n])=>find(n)));
