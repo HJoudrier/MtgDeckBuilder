@@ -1160,7 +1160,7 @@ const S={
   format:'edh',
   custom:{size:100,commander:true,maxCopies:1,colorLimits:{}},
   search:'', typeFilter:'', sort:'cmc', view:'grid',
-  graphSource:'collection', showImplicit:true, focusNode:null,
+  graphSource:'collection', showImplicit:true, focusNodes:new Set(),
   budget:{total:30,perCard:12,condition:'GD',lang:'any',sellerType:'any',country:'any'},
   selected:null, selectedCtx:'collection', limitB:200, limiteType:{}, filtreRole:null, exploreEtat:'', exploreSig:null, exploreMax:6000, exploreTotal:0, exploreCharge:0, exploreReste:false, catalogueActif:true, prixMaj:null, enriching:false, images:true, imagesFailed:false,
   edhrec:{slug:null,status:'idle',data:null,error:null},
@@ -1314,6 +1314,17 @@ function cardTile(e,ctx){
         </div>
         <div class="ctype">${esc(mainType(c))}${c.cmc?` · CMC ${c.cmc}`:''}</div>
         <div class="tags">${c.unknown?'<span class="tag" style="border-color:var(--brass);color:var(--brass)">à compléter</span>':''}${tags.map(t=>`<span class="tag">${CATLABEL[t]||t}</span>`).join('')}</div>`}
+    ${ctx==='deck'?(()=>{
+      const note=NOTES_DECK.get(c.name), inter=note?note.partners.length:0, er=note?note.edhrec:null;
+      return `<div class="tags">
+        ${inter?`<span class="tag" style="border-color:var(--brass);color:var(--brass)"
+          title="Cartes du deck avec lesquelles elle interagit">${inter} interaction${inter>1?'s':''}</span>`:''}
+        ${manque?`<span class="tag" style="border-color:var(--bad);color:#e39a90">hors collection</span>`:''}
+        ${note&&note.combos&&note.combos.length?`<span class="tag" style="border-color:#a077cf;color:#a077cf">combo</span>`:''}
+        ${er?`<span class="tag" style="border-color:#57c9c4;color:#57c9c4"
+          title="Inclusion et synergie EDHREC">edhrec ${Math.round(er.inclusion*100)} % / ${er.synergy>=0?'+':'−'}${Math.abs(Math.round(er.synergy*100))} %</span>`:''}
+      </div>${note?`<div class="mono small muted">score ${note.score.toFixed(1)}</div>`:''}`;
+    })():''}
     <div class="foot">
       <span>${eur(c.price)}</span>
       ${ctx==='collection'
@@ -1332,7 +1343,6 @@ function cardTile(e,ctx){
                ? `<button class="btn sm" data-act="setCmd" data-name="${esc(c.name)}" title="Désigner comme commandant">★</button>`:''}
            </span>`}
     ${ctx==='deck'&&S.commander===c.name?'<span class="cmdbadge">commandant</span>':''}
-    ${manque?`<span class="achatbadge">${manque===e.qty?'à acheter':manque+' à acheter'}</span>`:''}
     </div>
   </div>`;
 }
@@ -1344,7 +1354,12 @@ function cardRow(e,ctx){
     <span class="cname">${esc(c.name)}</span>
     <span class="costs">${manaHTML(c,true)}</span>
     <span class="mono small muted">${c.unknown?'à compléter':esc(mainType(c))}</span>
-    ${manque?`<span class="tag" style="border-color:var(--bad);color:#e39a90">${manque} à acheter</span>`:''}
+    ${manque?`<span class="tag" style="border-color:var(--bad);color:#e39a90">hors collection</span>`:''}
+    ${(()=>{ const note=ctx==='deck'?NOTES_DECK.get(c.name):null; if(!note) return '';
+      const i=note.partners.length;
+      return `${i?`<span class="tag" style="border-color:var(--brass);color:var(--brass)">${i} interaction${i>1?'s':''}</span>`:''}
+        ${note.edhrec?`<span class="tag" style="border-color:#57c9c4;color:#57c9c4">edhrec ${Math.round(note.edhrec.inclusion*100)} %</span>`:''}
+        <span class="mono small muted">score ${note.score.toFixed(1)}</span>`; })()}
     <span class="mono small">${eur(c.price)}</span>
     ${ctx==='collection'
       ? `<span class="qty"><button class="btn sm" data-act="dec" data-name="${esc(c.name)}">−</button><b>${e.qty}</b><button class="btn sm" data-act="inc" data-name="${esc(c.name)}">+</button><button class="btn sm" data-act="toDeck" data-name="${esc(c.name)}">▲</button></span>`
@@ -1525,6 +1540,12 @@ function renderC(){
 /* =====================================================================
    11. SECTION D — graphe des capacités
    ===================================================================== */
+function noeudsActifs(){ return [...S.focusNodes]; }
+/* Filtre cumulatif : une carte n'est retenue que si elle touche TOUS les nœuds
+   sélectionnés. Chaque nœud ajouté restreint donc davantage. */
+function carteTouche(c,noeuds){
+  return noeuds.every(n=>c.an.edges.some(e=>e.from===n||e.to===n));
+}
 function graphCards(){
   if(S.graphSource==='deck') return deckEntries().map(e=>e.card);
   if(S.graphSource==='suggestions') return currentSuggestions().slice(0,24).map(s=>s.card);
@@ -1565,7 +1586,6 @@ function svgGraph(g){
   if(list.length>420) list=list.sort((a,b)=>b.cards.size-a.cards.size).slice(0,420);
   const maxW=Math.max(1,...list.map(e=>e.cards.size));
   list.forEach(e=>{
-    if(S.focusNode && e.from!==S.focusNode && e.to!==S.focusNode) return;
     const p=pos[e.from],q=pos[e.to]; if(!p||!q) return;
     const mx=(p.x+q.x)/2,my=(p.y+q.y)/2;
     const cxp=cx+(mx-cx)*0.28, cyp=cy+(my-cy)*0.28;
@@ -1573,12 +1593,11 @@ function svgGraph(g){
     const col=GROUPS[NODE[e.to].group].color;
     const names=[...e.cards.keys()];
     paths+=`<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} Q${cxp.toFixed(1)},${cyp.toFixed(1)} ${q.x.toFixed(1)},${q.y.toFixed(1)}"
-      fill="none" stroke="${col}" stroke-width="${w.toFixed(2)}" opacity="${S.focusNode?0.75:0.42}" marker-end="url(#ah)">
+      fill="none" stroke="${col}" stroke-width="${w.toFixed(2)}" opacity="${S.focusNodes.size?0.7:0.42}" marker-end="url(#ah)">
       <title>${esc(NODE[e.from].label)} → ${esc(NODE[e.to].label)} — ${e.cards.size} carte(s) : ${esc(names.slice(0,6).join(', '))}</title></path>`;
   });
   if(S.showImplicit){
     IMPLICIT.forEach(([a,b])=>{
-      if(S.focusNode && a!==S.focusNode && b!==S.focusNode) return;
       const p=pos[a],q=pos[b]; const mx=(p.x+q.x)/2,my=(p.y+q.y)/2;
       paths+=`<path d="M${p.x.toFixed(1)},${p.y.toFixed(1)} Q${(cx+(mx-cx)*0.28).toFixed(1)},${(cy+(my-cy)*0.28).toFixed(1)} ${q.x.toFixed(1)},${q.y.toFixed(1)}"
         fill="none" stroke="#6f6690" stroke-width="1" stroke-dasharray="4 6" opacity=".5"><title>Règle du jeu : ${esc(NODE[a].label)} permet ${esc(NODE[b].label)}</title></path>`;
@@ -1586,7 +1605,7 @@ function svgGraph(g){
   }
   NODES.forEach(n=>{
     const id=n[0],p=pos[id],d=g.deg[id]||0;
-    const on=S.focusNode===id;
+    const on=S.focusNodes.has(id);
     const r=6+Math.min(16,Math.sqrt(d)*2.6);
     const col=GROUPS[n[2]].color;
     dots+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${col}" fill-opacity="${d?0.9:0.25}"
@@ -1606,19 +1625,29 @@ function svgGraph(g){
     ${arcs}${paths}${dots}${labels}</svg>`;
 }
 function renderD(){
-  const cards=graphCards(), g=buildGraph(cards);
+  const actifs=noeudsActifs();
+  const toutes=graphCards();
+  const cards=actifs.length?toutes.filter(c=>carteTouche(c,actifs)):toutes;
+  const g=buildGraph(cards);
   const focusInfo=(()=>{
-    if(!S.focusNode) return '';
+    if(!actifs.length) return '';
+    const bloc=n=>{
     const inb=[],outb=[];
-    g.edges.forEach(e=>{ if(e.to===S.focusNode) inb.push(e); if(e.from===S.focusNode) outb.push(e); });
+    g.edges.forEach(e=>{ if(e.to===n) inb.push(e); if(e.from===n) outb.push(e); });
     const fmtList=(arr,dir)=>arr.length?arr.map(e=>`<div class="arc"><b>${esc(NODE[dir==='in'?e.from:e.to].label)}</b> — ${
       [...e.cards.entries()].slice(0,8).map(([n,d])=>refCarte(n)+(d?` <span class="muted">(${esc(d)})</span>`:'')).join(', ')}</div>`).join(''):'<div class="arc muted">aucun</div>';
-    return `<div class="detail"><h3>${esc(NODE[S.focusNode].label)}</h3>
-      <div class="small muted" style="margin-bottom:6px">Cliquez à nouveau sur le nœud pour désélectionner.</div>
+    return `<div class="bloc" style="margin-bottom:8px"><h3 style="font-size:15px">${esc(NODE[n].label)}
+        <button class="btn sm" data-act="unfocusNode" data-node2="${n}" style="margin-left:6px">retirer</button></h3>
       <div class="row" style="align-items:flex-start;gap:16px">
         <div style="flex:1;min-width:220px"><div class="lab" style="margin-bottom:4px">Ce qui déclenche cet effet</div>${fmtList(inb,'in')}</div>
         <div style="flex:1;min-width:220px"><div class="lab" style="margin-bottom:4px">Ce que cet effet déclenche</div>${fmtList(outb,'out')}</div>
       </div></div>`;
+    };
+    return `<div class="detail">
+      <div class="small muted" style="margin-bottom:8px">${actifs.length===1
+        ? 'Un nœud sélectionné : cliquez-en un autre pour restreindre davantage, ou celui-ci pour le retirer.'
+        : `${actifs.length} nœuds sélectionnés : seules les ${cards.length} carte(s) qui les touchent tous sont retenues.`}</div>
+      ${actifs.map(bloc).join('')}</div>`;
   })();
   document.getElementById('bodyD').innerHTML=`
     <div class="row" style="margin-bottom:10px">
@@ -1627,8 +1656,8 @@ function renderD(){
           `<button data-gsrc="${k}" aria-pressed="${S.graphSource===k}">${l}</button>`).join('')}
       </div>
       <button class="btn" data-act="toggleImplicit" aria-pressed="${S.showImplicit}">Arcs de règles</button>
-      ${S.focusNode?`<button class="btn" data-act="clearFocus">Tout afficher</button>`:''}
-      <span class="small muted">${cards.length} cartes · ${g.edges.size} arcs</span>
+      ${actifs.length?`<button class="btn" data-act="clearFocus">Tout afficher (${actifs.length} nœud${actifs.length>1?'s':''} actif${actifs.length>1?'s':''})</button>`:''}
+      <span class="small muted">${cards.length}${actifs.length?` / ${toutes.length}`:''} cartes · ${g.edges.size} arcs</span>
     </div>
     ${cards.length?'':`<div class="empty" style="margin-bottom:10px">${
       {collection:'Aucune carte ne passe les filtres de la section A.',
@@ -1638,10 +1667,10 @@ function renderD(){
     <div class="graphbox">${svgGraph(g)}</div>
     <div class="legend">${Object.entries(GROUPS).map(([k,v])=>`<span class="lg"><span class="dot" style="background:${v.color}"></span>${v.label}</span>`).join('')}</div>
     ${focusInfo}
-    <div style="margin-top:8px"><button class="btn" data-act="graphToF">${S.focusNode?'Proposer des cartes branchées sur ce nœud':'Voir les suggestions d\'ajout'}</button></div>
+    <div style="margin-top:8px"><button class="btn" data-act="graphToF">${actifs.length?'Proposer des cartes branchées sur ces nœuds':'Voir les suggestions d\'ajout'}</button></div>
     <div class="small muted" style="margin-top:8px">${NODES.length} évènements possibles ; seuls ceux que vos cartes touchent sont nommés. Cliquez un nœud pour le détail.
       Chaque arc va d'un déclencheur vers un effet produit. Une carte peut poser plusieurs arcs. Les arcs pointillés sont les enchaînements permis par les règles (un jeton qui arrive déclenche les effets d'arrivée en jeu, un trésor sacrifié produit du mana…).</div>`;
-  document.getElementById('hintD').textContent=`${cards.length} cartes · ${g.edges.size} arcs`;
+  document.getElementById('hintD').textContent=`${cards.length} cartes · ${g.edges.size} arcs${actifs.length?` · ${actifs.length} nœud(s)`:''}`;
 }
 
 /* =====================================================================
@@ -1844,8 +1873,22 @@ function ficheHTML(card){
       ${noeuds.length?`<div class="chips" style="margin-top:7px">${noeuds.map(n=>`<button type="button" class="chip" data-act="focusNodeFrom" data-node2="${n}">${esc(NODE[n].label)}</button>`).join('')}</div>
         <div class="small muted">Touchez un nœud pour l'isoler dans le graphe.</div>`:''}</div>`;
 }
+async function chercheVerso(card){
+  // carte à deux faces dont l'archive n'a que le recto : une requête ciblée suffit
+  if(!card||card.imgB||card.versoTried||typeof fetch!=='function') return false;
+  if(!/ \/\/ /.test(card.type||'')&&!/ \/\/ /.test(card.name||'')) return false;
+  card.versoTried=true;
+  try{
+    const r=await fetch('https://api.scryfall.com/cards/named?exact='+encodeURIComponent(frontFace(card.name)));
+    if(!r.ok) return false;
+    applyScryfall(await r.json(),card,true);
+    if(card.imgB){ scheduleSave(); return true; }
+  }catch(err){}
+  return false;
+}
 function openCardModal(name){
   const card=find(name); if(!card) return;
+  chercheVerso(card).then(ok=>{ if(ok&&document.getElementById('dlg').open) openCardModal(name); });
   cacherApercu();
   const dispo=availableFor(card), offre=dispo>0?null:bestOffer(card);
   const actions=[
@@ -1925,8 +1968,16 @@ function zoneCommandant(){
       ${eligibles.length>1?choix:''}
     </div></div>`;
 }
+let NOTES_DECK=new Map();
+function evalueDeck(entries){
+  NOTES_DECK=new Map();
+  if(!entries.length) return;
+  const X=contexteEvaluation();
+  entries.forEach(e=>{ const n=noteCarte({card:e.card,source:'deck'},X); if(n) NOTES_DECK.set(e.card.name,n); });
+}
 function renderE(){
   const entries=deckEntries(), n=deckSize(), f=fmt(), cnt=deckCounts(), tgt=targets();
+  evalueDeck(entries);
   const cmcSplit={};
   entries.forEach(e=>{ if(e.card.isLand) return; const k=Math.min(e.card.cmc,9);
     cmcSplit[k]=cmcSplit[k]||{W:0,U:0,B:0,R:0,G:0,C:0};
@@ -2390,10 +2441,19 @@ async function chargerCatalogueComplet(force){
   }
 }
 /* Matérialisation à la demande : on n'analyse que les cartes retenues par les filtres. */
+function completeDepuisRec(c,rec){
+  // la carte existait déjà, créée avant que l'archive ne porte ces informations
+  if(rec[CH.IMG]&&!c.imgN){ c.img=CDN+'small/'+rec[CH.IMG]; c.imgN=CDN+'normal/'+rec[CH.IMG];
+                            c.imgL=CDN+'large/'+rec[CH.IMG]; c.imgTried=true; }
+  if(rec[CH.VERSO]&&!c.imgB){ c.imgB=CDN+'normal/'+rec[CH.VERSO]; c.imgBL=CDN+'large/'+rec[CH.VERSO]; }
+  if(rec[CH.FORCE]!=null&&c.force==null){ c.force=rec[CH.FORCE]; c.an=analyze(c); c.cats=categories(c); }
+  if(!c.price&&rec[CH.PRIX]>0) c.price=rec[CH.PRIX];
+  return c;
+}
 function carteDuCatalogue(rec){
   const nom=rec[CH.NOM];
   let c=find(nom);
-  if(c&&!c.unknown) return c;
+  if(c&&!c.unknown) return completeDepuisRec(c,rec);
   c=registerCard(buildCard(nom, rec[CH.COUT]||'—', rec[CH.TYPE], rec[CH.PRIX], rec[CH.TEXTE]));
   if(rec[CH.ID_COUL]!==undefined) c.identity=rec[CH.ID_COUL]?rec[CH.ID_COUL].split(''):[];
   c.cmc=rec[CH.CMC];
@@ -2586,7 +2646,7 @@ async function chargerCatalogue(){
   renderAll();
   void ajoutees;
 }
-function currentSuggestions(){
+function contexteEvaluation(){
   const deck=deckEntries().map(e=>e.card);
   const f=fmt(), cnt=deckCounts(), tgt=targets();
   const cmcCount={}; deck.forEach(c=>{ if(!c.isLand) cmcCount[Math.min(c.cmc,7)]=(cmcCount[Math.min(c.cmc,7)]||0)+1; });
@@ -2629,6 +2689,93 @@ function currentSuggestions(){
       push(deckTrig,tt.c,{nom:d.name,t:tt}); });
   });
 
+  return {deck,f,cnt,tgt,cmcCount,ideal,nonlandTotal,cmdId,IDX,reach,deckProd,deckTrig};
+}
+/* Une seule notation pour tout le monde : les cartes proposées comme celles déjà jouées. */
+function noteCarte(p,X){
+    const c=p.card;
+    if(X.cmdId&&p.source!=='deck'&&c.identity.some(x=>!X.cmdId.includes(x))) return null;
+    let score=0; const reasons=[];
+    // synergies avec le deck
+    const linkMap=new Map();
+    const addLink=(nm,concept,dir,k,detail)=>{ if(nm===c.name||k<=0) return;
+      if(!linkMap.has(nm)) linkMap.set(nm,new Map());
+      const cle=concept+'|'+dir, ancien=linkMap.get(nm).get(cle);
+      if(!ancien||ancien.k<k) linkMap.get(nm).set(cle,{concept,dir,k,detail});
+    };
+    c.an.produces.forEach(pp=>{ if(pp.scope!=='self') return;
+      feedsDe(pp).forEach(k=>(X.deckTrig.get(k)||[]).forEach(x=>
+        addLink(x.nom,k,'ab',compat(pp,x.t),libelleQual(x.t.q)))); });
+    c.an.triggers.forEach(tt=>{ if(tt.scope!=='self'&&tt.q.portee!=='adversaire') return;
+      (X.deckProd.get(tt.c)||[]).forEach(x=>
+        addLink(x.nom,tt.c,'ba',compat(x.p,tt),libelleQual(tt.q))); });
+    const partners=[...linkMap.entries()].map(([nm,m])=>{
+      const links=[...m.values()];
+      let w=0; links.forEach(l=>{
+        const base=(l.concept==='ETB'||l.concept==='LANCEMENT')?0.8:(l.dir==='ab'?3.2:2.6);
+        w += base*(l.k||1); });
+      return {name:nm,links,w};
+    });
+    let weight=partners.reduce((a,p2)=>a+p2.w,0);
+    partners.sort((a,b)=>b.w-a.w);
+    score+=Math.min(26,weight);
+    if(partners.length){
+      const detail=partners.slice(0,3).map(p2=>{
+        const cs=[...new Set(p2.links.map(l=>NODE[l.concept].label.toLowerCase()))].slice(0,2).join(', ');
+        return `${p2.name} (${cs})`;
+      }).join(', ');
+      reasons.push(`se branche à ${partners.length} carte(s) : ${detail}`);
+    }
+    // lecture du graphe : boucle fermée, pont entre deux effets, nœud sélectionné
+    const graph=[];
+    let loopEdge=null;
+    c.an.edges.forEach(e=>{ if(!loopEdge && X.reach[X.IDX[e.to]][X.IDX[e.from]]) loopEdge=e; });
+    if(loopEdge){
+      graph.push('boucle'); score+=12;
+      reasons.unshift(`ferme une boucle avec le deck : ${NODE[loopEdge.from].label} → ${NODE[loopEdge.to].label} → … → ${NODE[loopEdge.from].label}`);
+    }
+    const hasAb=partners.some(p2=>p2.links.some(l=>l.dir==='ab'));
+    const hasBa=partners.some(p2=>p2.links.some(l=>l.dir==='ba'));
+    if(hasAb&&hasBa){ graph.push('pont'); score+=5;
+      reasons.unshift('relie deux effets déjà présents : elle reçoit un déclencheur du deck et en fournit un autre'); }
+    const combos=combosCompletesPar(c);
+    if(combos.length){
+      score+=11;
+      const c0=combos[0];
+      reasons.unshift(`combo connu : avec ${c0.cartes.filter(n=>norm(n)!==norm(c.name)).join(' + ')}${c0.produit.length?` → ${c0.produit.slice(0,2).join(', ')}`:''}${combos.length>1?` (et ${combos.length-1} autre${combos.length>2?'s':''})`:''}`);
+    }
+    const er=edhrecFor(c);
+    if(er){
+      score+=3+er.inclusion*8+Math.max(0,er.synergy)*10;
+      reasons.push(`EDHREC : jouée dans ${Math.round(er.inclusion*100)} % des decks ${S.commander}, synergie ${er.synergy>=0?'+':'−'}${Math.abs(Math.round(er.synergy*100))} %`);
+    }
+    const actifs=noeudsActifs();
+    if(actifs.length&&carteTouche(c,actifs)){ graph.push('noeud'); score+=4*actifs.length;
+      reasons.unshift(`touche ${actifs.length>1?'tous les nœuds sélectionnés':'le nœud sélectionné'} : ${actifs.map(n=>NODE[n].label).join(', ')}`); }
+    // besoins par rôle
+    let needBonus=0;
+    c.cats.forEach(cat=>{ if(cat in X.tgt){ const miss=X.tgt[cat]-(X.cnt[cat]||0);
+      if(miss>0){ needBonus+=Math.min(6,miss*1.1); reasons.push(`comble un manque : ${CATLABEL[cat]} (${X.cnt[cat]||0}/${X.tgt[cat]})`); } } });
+    score+=Math.min(9,needBonus);
+    // courbe de mana
+    if(!c.isLand){
+      const k=Math.min(c.cmc,7);
+      const have=(X.cmcCount[k]||0)/X.nonlandTotal, want=X.ideal[k];
+      const gap=want-have;
+      score+=gap*14;
+      if(gap>0.05) reasons.push(`renforce la courbe à ${c.cmc} mana`);
+      if(gap<-0.06) reasons.push(`attention : la courbe est déjà chargée à ${c.cmc}`);
+    }
+    // densité de capacités utiles
+    score+=Math.min(3,c.an.edges.length*0.35);
+    if(p.source==='achat'){ score-=2.5; reasons.push(`hors collection — ${eur(p.offer.price)} (${p.offer.quality}, ${p.offer.lang}, ${p.offer.seller})`); }
+    if(deckSize()===0) score+=c.cats.has('ramp')||c.cats.has('pioche')?4:0;
+    return {card:c,score,reasons,partners,source:p.source,offer:p.offer,graph,edhrec:er,combos};
+
+}
+function currentSuggestions(){
+  const X=contexteEvaluation();
+  const f=X.f;
   const pool=[];
   filtered().forEach(e=>{ if(e.card.isToken) return;   // un jeton ne se joue pas depuis la main
     if(availableFor(e.card)>0 && (S.deck.get(e.card.name)||0)<f.maxCopies) pool.push({card:e.card,source:'collection'}); });
@@ -2651,86 +2798,7 @@ function currentSuggestions(){
   }
 
   const res=[];
-  pool.forEach(p=>{
-    const c=p.card;
-    if(cmdId&&c.identity.some(x=>!cmdId.includes(x))) return;
-    let score=0; const reasons=[];
-    // synergies avec le deck
-    const linkMap=new Map();
-    const addLink=(nm,concept,dir,k,detail)=>{ if(nm===c.name||k<=0) return;
-      if(!linkMap.has(nm)) linkMap.set(nm,new Map());
-      const cle=concept+'|'+dir, ancien=linkMap.get(nm).get(cle);
-      if(!ancien||ancien.k<k) linkMap.get(nm).set(cle,{concept,dir,k,detail});
-    };
-    c.an.produces.forEach(pp=>{ if(pp.scope!=='self') return;
-      feedsDe(pp).forEach(k=>(deckTrig.get(k)||[]).forEach(x=>
-        addLink(x.nom,k,'ab',compat(pp,x.t),libelleQual(x.t.q)))); });
-    c.an.triggers.forEach(tt=>{ if(tt.scope!=='self'&&tt.q.portee!=='adversaire') return;
-      (deckProd.get(tt.c)||[]).forEach(x=>
-        addLink(x.nom,tt.c,'ba',compat(x.p,tt),libelleQual(tt.q))); });
-    const partners=[...linkMap.entries()].map(([nm,m])=>{
-      const links=[...m.values()];
-      let w=0; links.forEach(l=>{
-        const base=(l.concept==='ETB'||l.concept==='LANCEMENT')?0.8:(l.dir==='ab'?3.2:2.6);
-        w += base*(l.k||1); });
-      return {name:nm,links,w};
-    });
-    let weight=partners.reduce((a,p2)=>a+p2.w,0);
-    partners.sort((a,b)=>b.w-a.w);
-    score+=Math.min(26,weight);
-    if(partners.length){
-      const detail=partners.slice(0,3).map(p2=>{
-        const cs=[...new Set(p2.links.map(l=>NODE[l.concept].label.toLowerCase()))].slice(0,2).join(', ');
-        return `${p2.name} (${cs})`;
-      }).join(', ');
-      reasons.push(`se branche à ${partners.length} carte(s) : ${detail}`);
-    }
-    // lecture du graphe : boucle fermée, pont entre deux effets, nœud sélectionné
-    const graph=[];
-    let loopEdge=null;
-    c.an.edges.forEach(e=>{ if(!loopEdge && reach[IDX[e.to]][IDX[e.from]]) loopEdge=e; });
-    if(loopEdge){
-      graph.push('boucle'); score+=12;
-      reasons.unshift(`ferme une boucle avec le deck : ${NODE[loopEdge.from].label} → ${NODE[loopEdge.to].label} → … → ${NODE[loopEdge.from].label}`);
-    }
-    const hasAb=partners.some(p2=>p2.links.some(l=>l.dir==='ab'));
-    const hasBa=partners.some(p2=>p2.links.some(l=>l.dir==='ba'));
-    if(hasAb&&hasBa){ graph.push('pont'); score+=5;
-      reasons.unshift('relie deux effets déjà présents : elle reçoit un déclencheur du deck et en fournit un autre'); }
-    const combos=combosCompletesPar(c);
-    if(combos.length){
-      score+=11;
-      const c0=combos[0];
-      reasons.unshift(`combo connu : avec ${c0.cartes.filter(n=>norm(n)!==norm(c.name)).join(' + ')}${c0.produit.length?` → ${c0.produit.slice(0,2).join(', ')}`:''}${combos.length>1?` (et ${combos.length-1} autre${combos.length>2?'s':''})`:''}`);
-    }
-    const er=edhrecFor(c);
-    if(er){
-      score+=3+er.inclusion*8+Math.max(0,er.synergy)*10;
-      reasons.push(`EDHREC : jouée dans ${Math.round(er.inclusion*100)} % des decks ${S.commander}, synergie ${er.synergy>=0?'+':'−'}${Math.abs(Math.round(er.synergy*100))} %`);
-    }
-    const touches=S.focusNode&&c.an.edges.some(e=>e.from===S.focusNode||e.to===S.focusNode);
-    if(touches){ graph.push('noeud'); score+=4;
-      reasons.unshift(`touche le nœud sélectionné dans le graphe : ${NODE[S.focusNode].label}`); }
-    // besoins par rôle
-    let needBonus=0;
-    c.cats.forEach(cat=>{ if(cat in tgt){ const miss=tgt[cat]-(cnt[cat]||0);
-      if(miss>0){ needBonus+=Math.min(6,miss*1.1); reasons.push(`comble un manque : ${CATLABEL[cat]} (${cnt[cat]||0}/${tgt[cat]})`); } } });
-    score+=Math.min(9,needBonus);
-    // courbe de mana
-    if(!c.isLand){
-      const k=Math.min(c.cmc,7);
-      const have=(cmcCount[k]||0)/nonlandTotal, want=ideal[k];
-      const gap=want-have;
-      score+=gap*14;
-      if(gap>0.05) reasons.push(`renforce la courbe à ${c.cmc} mana`);
-      if(gap<-0.06) reasons.push(`attention : la courbe est déjà chargée à ${c.cmc}`);
-    }
-    // densité de capacités utiles
-    score+=Math.min(3,c.an.edges.length*0.35);
-    if(p.source==='achat'){ score-=2.5; reasons.push(`hors collection — ${eur(p.offer.price)} (${p.offer.quality}, ${p.offer.lang}, ${p.offer.seller})`); }
-    if(deckSize()===0) score+=c.cats.has('ramp')||c.cats.has('pioche')?4:0;
-    res.push({card:c,score,reasons,partners,source:p.source,offer:p.offer,graph,edhrec:er,combos});
-  });
+  pool.forEach(p=>{ const n=noteCarte(p,X); if(n) res.push(n); });
   return res.filter(r=>r.score>0).sort((a,b)=>b.score-a.score);
 }
 function ligneCatalogue(){
@@ -2885,7 +2953,7 @@ function panneauAchats(){
 function listeSuggestions(){
   const toutes=currentSuggestions();
   const sug=S.filtreRole?toutes.filter(x=>x.card.cats.has(S.filtreRole)):toutes;
-  const graphPicks=S.focusNode?sug.filter(s=>s.graph&&s.graph.includes('noeud')):[];
+  const graphPicks=S.focusNodes.size?sug.filter(s=>s.graph&&s.graph.includes('noeud')):[];
   const byType={};
   sug.forEach(s=>{ const t=mainType(s.card); (byType[t]=byType[t]||[]).push(s); });
   visuelsSuggestions(byType);
@@ -2896,8 +2964,8 @@ function listeSuggestions(){
     </div>`:''}
     ${graphPicks.length?`
       <div class="group" style="border-color:var(--brass-d)">
-        <h4>Autour du nœud sélectionné
-          <span class="small muted">« ${esc(NODE[S.focusNode]?NODE[S.focusNode].label:'')} » en section D</span></h4>
+        <h4>Autour des nœuds sélectionnés
+          <span class="small muted">${noeudsActifs().map(n=>esc(NODE[n].label)).join(' + ')} — section D</span></h4>
         <div class="sugrid">${graphPicks.slice(0,8).map(s=>sugRow(s)).join('')}</div>
       </div>`:''}
     ${sug.length?TYPE_ORDER.filter(t=>byType[t]).map(t=>{
@@ -3534,8 +3602,12 @@ document.addEventListener('click',ev=>{
   }
   if(t.dataset.cmode){ S.colorMode=t.dataset.cmode; S.limitB=PAGE; renderAll(); return; }
   if(t.dataset.view){ S.view=t.dataset.view; renderAll(); return; }
-  if(t.dataset.gsrc){ S.graphSource=t.dataset.gsrc; S.focusNode=null; renderD(); return; }
-  if(t.dataset.node){ S.focusNode=S.focusNode===t.dataset.node?null:t.dataset.node; renderD(); return; }
+  if(t.dataset.gsrc){ S.graphSource=t.dataset.gsrc; S.focusNodes.clear(); renderD(); return; }
+  if(t.dataset.node){
+    const n=t.dataset.node;
+    if(S.focusNodes.has(n)) S.focusNodes.delete(n); else S.focusNodes.add(n);
+    renderD(); renderF(); return;
+  }
 
   const act=t.dataset.act, name=t.dataset.name;
   if(act==='inc'){ S.collection.set(name,(S.collection.get(name)||0)+1); renderAll(); return; }
@@ -3553,7 +3625,8 @@ document.addEventListener('click',ev=>{
     const c=find(S.commander); if(!c) return;
     S.colors=new Set(c.identity.length?[...c.identity,'C']:['C']);
     S.limitB=PAGE; renderAll(); toast(`Filtres de couleur alignés sur ${c.name}.`); return; }
-  if(act==='clearFocus'){ S.focusNode=null; renderD(); return; }
+  if(act==='clearFocus'){ S.focusNodes.clear(); renderD(); renderF(); return; }
+  if(act==='unfocusNode'){ S.focusNodes.delete(t.dataset.node2); renderD(); renderF(); return; }
   if(act==='graphToF'){
     document.getElementById('secF').classList.add('open'); renderF();
     document.getElementById('secF').scrollIntoView({behavior:'smooth',block:'start'}); return;
@@ -3564,7 +3637,7 @@ document.addEventListener('click',ev=>{
     openCardModal(name); majApercu(); return;
   }
   if(act==='focusNodeFrom'){
-    S.focusNode=t.dataset.node2;
+    S.focusNodes.add(t.dataset.node2);
     document.getElementById('secD').classList.add('open'); renderD(); renderF();
     document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
   }
@@ -3634,7 +3707,7 @@ document.addEventListener('click',ev=>{
   if(act==='noColors'){ S.colors=new Set(); S.limitB=PAGE; renderAll(); return; }
   if(act==='focusCard'){
     const c=find(name);
-    S.graphSource='collection'; S.focusNode=c.an.edges.length?c.an.edges[0].to:null;
+    S.graphSource='collection'; S.focusNodes=new Set(c.an.edges.length?[c.an.edges[0].to]:[]);
     document.getElementById('secD').classList.add('open'); renderD();
     document.getElementById('secD').scrollIntoView({behavior:'smooth',block:'start'}); return;
   }
