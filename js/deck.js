@@ -162,10 +162,91 @@ function ficheTexteHTML(card) {
 }
 
 /* Le visuel n'a pas pu se charger : le texte prend sa place. */
+/* La fiche ouverte se reconstruit quand Scryfall a répondu — ou renoncé —
+   sans quoi l'attente affichée resterait à tourner pour rien. */
+function rafraichirFiche() {
+  const dlg = document.getElementById('dlg');
+  const el = dlg && dlg.open && dlg.querySelector('.fiche[data-fiche]');
+  if (el) openCardModal(el.getAttribute('data-fiche'));
+}
+
+/* Carte vide et son icône de chargement, le temps que le visuel arrive. */
+function visuelAttenteHTML() {
+  return `<div class="visuwrap">
+    <div class="visu-attente" role="status" aria-label="Visuel en cours de chargement">
+      <span class="spin" aria-hidden="true"></span>
+    </div>
+  </div>`;
+}
+
 function ficheImageKO(img) {
   const wrap = img && img.closest('.visuwrap');
   const c = img && find(img.getAttribute('data-name') || '');
   if (wrap && c) wrap.outerHTML = ficheTexteHTML(c);
+}
+
+/* Défilement des éditions sous le visuel de la fiche. Deux sources : celles
+   que la collection possède, et toutes celles que Scryfall publie — ces
+   dernières cherchées seulement si on les demande. */
+function blocVersions(card) {
+  if (!card || card.unknown) return '';
+  const possedees = versionsCarte(card);
+  const toutes = sourceVersions(card) === 'toutes';
+  const voulue = sourceVoulue(card);
+  const vs = listeVersions(card);
+  const enCours = card.editionsEtat === 'chargement';
+  const bascule = `<div class="vers-src">
+    <button type="button" class="vers-s" data-act="versionsPossedees" data-name="${esc(card.name)}"
+      aria-pressed="${voulue !== 'toutes'}" ${possedees.length ? '' : 'disabled'}>Mes éditions${possedees.length ? ` (${possedees.length})` : ''}</button>
+    <button type="button" class="vers-s" data-act="versionsToutes" data-name="${esc(card.name)}"
+      aria-pressed="${voulue === 'toutes'}">${enCours ? 'Toutes…' : `Toutes${card.editionsEtat === 'ok' ? ` (${(card.editions||[]).length})` : ''}`}</button>
+  </div>`;
+
+  if (!vs.length) {
+    return `<div class="vers">${bascule}
+      <div class="small muted vers-det">${
+        enCours ? 'Recherche des éditions publiées…'
+        : card.editionsEtat === 'erreur' ? `Éditions indisponibles : ${esc(card.editionsErreur || 'échec')}.`
+        : toutes ? 'Scryfall ne publie aucune édition papier pour cette carte.'
+        : "Aucune édition relevée à l'import : passez par « Toutes » pour choisir une illustration."}</div>
+    </div>`;
+  }
+
+  const i = versionRang(card), v = vs[i], cle = cleVersion(v);
+  const u = (v.imgN || v.img) ? v : (card.visuels || {})[cle];
+  const retenue = versionRetenue(card) === cle;
+  const qte = possedeVersion(card, cle);
+  const attente = !u && !card.visuelsTried;
+  const details = [
+    u && u.setName ? esc(u.setName) : '',
+    u && u.artist ? `ill. ${esc(u.artist)}` : '',
+    v.sortie ? esc(String(v.sortie).slice(0, 4)) : '',
+    qte ? `${qte} exemplaire(s)` : (toutes ? 'non possédée' : '')
+  ].filter(Boolean).join(' · ');
+
+  return `<div class="vers">
+    ${bascule}
+    <div class="vers-nav">
+      <button type="button" class="vers-b" data-act="versionPrec" data-name="${esc(card.name)}"
+        title="Édition précédente" ${vs.length < 2 ? 'disabled' : ''}>‹</button>
+      <div class="vers-cap">
+        <b>${esc(v.set)}${v.num ? ` n°${esc(v.num)}` : ''}</b>
+        <span class="muted">${i + 1} / ${vs.length}</span>
+      </div>
+      <button type="button" class="vers-b" data-act="versionSuiv" data-name="${esc(card.name)}"
+        title="Édition suivante" ${vs.length < 2 ? 'disabled' : ''}>›</button>
+    </div>
+    <div class="small muted vers-det">${
+      enCours ? 'Recherche des éditions publiées…'
+      : u && u.ko ? 'Scryfall ne connaît pas cette édition : son visuel reste indisponible.'
+      : attente ? 'Visuel en cours de recherche…'
+      : details}</div>
+    ${retenue
+      ? '<div class="small vers-ok">Illustration affichée en priorité</div>'
+      : `<button type="button" class="btn sm vers-pick" data-act="choisirVersion"
+           data-name="${esc(card.name)}" data-cle="${esc(cle)}" ${(!u || u.ko) ? 'disabled' : ''}>
+           Afficher cette illustration en priorité</button>`}
+  </div>`;
 }
 
 function ficheHTML(card) {
@@ -228,17 +309,46 @@ function ficheHTML(card) {
   };
   const noeuds = [...new Set(card.an.edges.flatMap(e => [e.from, e.to]))];
 
-  return `<div class="fiche">
-      ${S.images && (card.imgL || card.imgN || card.img) ? `<div class="visuwrap">
-        <img class="visu" src="${esc(faceVisible(card,true))}" alt="${esc(card.name)}" data-name="${esc(card.name)}" onerror="ficheImageKO(this)">
-        ${aDeuxFaces(card) && autreFace(card) ? `<button type="button" class="miniface" data-act="flip" data-name="${esc(card.name)}"
+  /* La même liste que le sélecteur d'éditions, et non les seules éditions
+     possédées : sans quoi une carte possédée en un seul exemplaire laissait
+     défiler les illustrations publiées sans jamais changer son visuel. */
+  const vers = listeVersions(card);
+  const vCour = vers.length ? versionCourante(card) : null;
+  const vCle = vCour ? cleVersion(vCour) : '';
+  const vAffichee = !vCour || vCle === cleImpression(card.set, card.num);
+  const vSrc = vCour ? visuelVersion(card, vCour, true) : faceVisible(card, true);
+  /* Trois états : le visuel est là, il se cherche encore, ou il n'y en a pas. */
+  const blocVisuel = !S.images ? ficheTexteHTML(card)
+    : vSrc ? `<div class="visuwrap">
+        <img class="visu" src="${esc(vSrc)}" alt="${esc(card.name)}" data-name="${esc(card.name)}" onerror="ficheImageKO(this)">
+        ${vAffichee && aDeuxFaces(card) && autreFace(card) ? `<button type="button" class="miniface" data-act="flip" data-name="${esc(card.name)}"
             title="Afficher ${RETOURNEES.has(card.name)?'le recto':'le verso'}">
             <img src="${esc(autreFace(card))}" alt="">
             <span>${RETOURNEES.has(card.name)?'recto':'verso'}</span>
           </button>` : ''}
-      </div>` : ficheTexteHTML(card)}
+      </div>`
+    : visuelEnRecherche(card, vCour) ? visuelAttenteHTML()
+    : ficheTexteHTML(card);
+
+  return `<div class="fiche" data-fiche="${esc(card.name)}">
+      <div class="visucol">
+      ${blocVisuel}
+      ${blocVersions(card)}
+      </div>
       <div class="meta">
         <div class="small muted">${eur(card.price)}${card.price?' (tendance Cardmarket)':''}${card.artist?` · ill. ${esc(card.artist)}`:''}</div>
+        ${(() => {
+          const ed = libelleImpression(card);
+          if (!ed) return '';
+          const autres = (card.impressions || []).filter(i => i.set !== card.set || i.num !== card.num);
+          const suivie = card.imgImpression === cleImpression(card.set, card.num);
+          return `<div class="small muted" title="${esc(suivie
+            ? "Édition relevée à l'import : le visuel, l'illustrateur et le prix affichés sont ceux de cette impression."
+            : "Édition relevée à l'import. Scryfall ne l'a pas reconnue : le visuel et le prix affichés sont ceux d'une autre impression.")}">Édition ${esc(ed)}${
+            card.setName ? ` — ${esc(card.setName)}` : ''}${
+            card.impressionKO ? ' — inconnue de Scryfall' : ''}${
+            autres.length ? ` · aussi ${autres.map(i => esc(i.set + (i.num ? ' n°' + i.num : ''))).join(', ')}` : ''}</div>`;
+        })()}
         ${edhrecTags.length ? `<div class="tags edhrec-tags-modal" style="margin:8px 0 4px;gap:5px;flex-wrap:wrap">${edhrecTags.join('')}</div>` : ''}
         ${(() => {
           const arch = archetypesCarte(card);
@@ -295,6 +405,7 @@ function openCardModal(name) {
   const rouvre = ok => { if (ok && document.getElementById('dlg') && document.getElementById('dlg').open) openCardModal(name); };
   chercheVerso(card).then(rouvre);
   chercheTexte(card).then(rouvre);
+  chercheImpressions(card).then(rouvre);
   cacherApercu();
   const dispo = availableFor(card), offre = dispo > 0 ? null : bestOffer(card);
   const actions = [

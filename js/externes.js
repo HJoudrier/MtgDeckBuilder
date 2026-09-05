@@ -227,6 +227,12 @@ async function loadEdhrec(force) {
 const ARCH_CLE_IDB = 'archetypes';
 const ARCH_PAUSE = 130;   // ms entre deux requêtes, par courtoisie envers EDHREC
 
+/* EDHREC ne publie aucun manifeste daté : impossible de demander « ta
+   liste a-t-elle changé ? » sans la relire. Elle bouge peu, on la relit
+   donc une fois par semaine et on ne remplace la nôtre que si elle
+   diffère vraiment. */
+const ARCH_FRAICHEUR = 7 * 24 * 3600e3;
+
 /* json.edhrec.com est un dépôt de fichiers : une clé absente répond
    « AccessDenied », jamais 404. La forme d'adresse des pages de thème
    n'est donc pas devinable — on la cherche une fois, par sondage, avant
@@ -404,9 +410,11 @@ function themesPageEdhrec(j) {
   return [...out.values()];
 }
 
-/* Cherche l'index, en partant du préfixe déjà validé pour les thèmes. */
-async function chargerListeArchetypesEdhrec(force) {
-  if (!force && ARCH_BASE.liste.length) return ARCH_BASE.liste;
+/* Cherche l'index, en partant du préfixe déjà validé pour les thèmes.
+   Renvoie ce qu'il trouve sans toucher au cache : c'est l'appelant qui
+   décide de le garder, pour qu'une vérification ratée ne fasse pas
+   perdre la liste déjà en place. */
+async function chargerListeArchetypesEdhrec() {
   const url = await formeThemeEdhrec();
   if (!url) return [];
   const pre = url('x').replace(ARCH_HOTE, '').replace(/\/?x(\/all)?\.json$/, '');
@@ -419,8 +427,7 @@ async function chargerListeArchetypesEdhrec(force) {
         .filter(t => t.slug && !/^(commanders?|cards?|decks?|articles?)$/i.test(t.slug));
       ARCH_BASE.essais.push(`index ${candidat} → ${themes.length} thème(s)`);
       if (themes.length >= 5) {
-        ARCH_BASE.liste = themes.sort((a, b) => (b.n || 0) - (a.n || 0) || a.label.localeCompare(b.label));
-        return ARCH_BASE.liste;
+        return themes.sort((a, b) => (b.n || 0) - (a.n || 0) || a.label.localeCompare(b.label));
       }
     } catch(err) {
       ARCH_BASE.essais.push(`index ${candidat} → ${err.message || 'échec réseau'}`);
@@ -465,39 +472,58 @@ function sauverArchetypesEdhrec() {
   }).catch(() => {});
 }
 
-/* Chargement à la demande : l'index, puis les thèmes déjà cochés. */
-async function chargerArchetypesEdhrec(force) {
+/* Une liste vaut l'autre si elle porte les mêmes thèmes. */
+function signatureArchetypes(liste) {
+  return (liste || []).map(t => t.slug).join('|');
+}
+
+/* Y a-t-il lieu d'interroger EDHREC ? Oui si nous n'avons rien, ou si
+   notre liste a passé la semaine. */
+function archetypesARevoir() {
+  return !ARCH_BASE.liste.length || !ARCH_BASE.maj || Date.now() - ARCH_BASE.maj > ARCH_FRAICHEUR;
+}
+
+/* Chargement automatique, au démarrage : l'index, puis les thèmes déjà
+   cochés. Discret par nature — la fenêtre des filtres porte l'état, et
+   seul un vrai changement de liste se signale. Une vérification ratée
+   laisse en place la liste déjà connue. */
+async function chargerArchetypesEdhrec() {
   if (ARCH_BASE.etat === 'chargement') return;
   if (typeof fetch !== 'function') {
     ARCH_BASE.etat = 'erreur';
     ARCH_BASE.erreur = 'ce navigateur ne sait pas interroger EDHREC';
     return;
   }
+  const avant = signatureArchetypes(ARCH_BASE.liste);
   ARCH_BASE.etat = 'chargement';
   ARCH_BASE.erreur = '';
-  if (force) { ARCH_BASE.forme = null; ARCH_BASE.liste = []; }
+  ARCH_BASE.essais = [];
   if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
 
-  const liste = await chargerListeArchetypesEdhrec(force);
-  if (!liste.length) {
+  const liste = await chargerListeArchetypesEdhrec();
+  if (liste.length) {
+    const change = signatureArchetypes(liste) !== avant;
+    ARCH_BASE.liste = liste;
+    ARCH_BASE.maj = Date.now();
+    ARCH_BASE.etat = 'ok';
+    sauverArchetypesEdhrec();
+    if (change && avant && typeof toast === 'function') {
+      toast(`Liste EDHREC actualisée : ${liste.length.toLocaleString('fr-FR')} thèmes.`);
+    }
+    for (const slug of archetypesAChargerEdhrec()) await chargerThemeEdhrec(slug);
+  } else if (avant) {
+    /* EDHREC n'a pas répondu, mais notre liste tient toujours : on la
+       garde, sans toucher à sa date, pour retenter au prochain lancement. */
+    ARCH_BASE.etat = 'ok';
+  } else {
     const hoteOK = await temoinEdhrec();
     ARCH_BASE.etat = 'erreur';
     ARCH_BASE.erreur = hoteOK
       ? "la liste des thèmes n'est pas à l'adresse attendue (l'hôte répond pourtant pour les commandants)"
       : 'EDHREC injoignable depuis ce navigateur (hors ligne, CORS ou accès bloqué)';
-  } else {
-    ARCH_BASE.etat = 'ok';
-    ARCH_BASE.maj = Date.now();
-    sauverArchetypesEdhrec();
-    for (const slug of archetypesAChargerEdhrec()) await chargerThemeEdhrec(slug);
   }
   if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
   if (typeof renderAll === 'function') renderAll();
-  if (typeof toast === 'function') {
-    toast(ARCH_BASE.etat === 'ok'
-      ? `${ARCH_BASE.liste.length} thèmes EDHREC disponibles.`
-      : `Archétypes EDHREC : ${ARCH_BASE.erreur}.`);
-  }
 }
 
 /* 2. Commander Spellbook */
@@ -763,7 +789,7 @@ async function lireCatalogueFichier(source, nom) {
   CAT.impressions = impressions;
   invaliderCandidats();
   if (saveState !== 'desactive' && S.catalogueActif)
-    idbEcrire('cartes', {v:1, cartes:CAT.cartes, maj:CAT.maj, date:CAT.date, octets:CAT.octets}).catch(() => {});
+    idbEcrire('cartes', {v:2, cartes:CAT.cartes, maj:CAT.maj, date:CAT.date, octets:CAT.octets, impressions}).catch(() => {});
   renderAll();
   toast(`${CAT.cartes.length.toLocaleString('fr-FR')} cartes retenues${
     impressions > CAT.cartes.length ? ` sur ${impressions.toLocaleString('fr-FR')} impressions lues` : ''}.`);
@@ -836,16 +862,8 @@ async function majPrix(force) {
 }
 
 async function telechargerCatalogue() {
-  if (typeof fetch !== 'function') { toast('Téléchargement impossible dans ce contexte.'); return; }
+  if (typeof fetch !== 'function') { toast('Téléchargement impossible dans ce contexte.'); return false; }
   CAT.etat = 'chargement'; CAT.source = 'réseau'; CAT.detail = ''; renderF();
-  const rafraichirFenetre = () => {
-    const corps = document.getElementById('dlgBody');
-    if (corps && corps.innerHTML.includes('Catalogue des cartes Magic')) {
-      corps.innerHTML = corpsSauvegarde();
-      brancherRestauration();
-      brancherCatalogue();
-    }
-  };
   try {
     const info = await verifierMajCatalogue();
     const adresse = (info && (info.jsonl_download_uri || info.download_uri)) || CAT.uri;
@@ -855,7 +873,9 @@ async function telechargerCatalogue() {
     if (!rep.ok) throw new Error('HTTP ' + rep.status);
     CAT.maj = (info && info.updated_at) || null;
     await lireCatalogueFichier(rep, adresse);
-    rafraichirFenetre();
+    S.majIgnoree = null;
+    rafraichirFenetreSauvegarde();
+    return true;
   } catch(err) {
     const bloque = (err instanceof TypeError) || /Failed to fetch|NetworkError|Load failed/i.test(err.message || '');
     CAT.etat = bloque ? 'hors-ligne' : 'erreur';
@@ -863,9 +883,10 @@ async function telechargerCatalogue() {
       ? `le serveur de fichiers de Scryfall (data.scryfall.io) refuse la requête depuis une page tierce. Utilisez le bouton de téléchargement, puis chargez l'archive obtenue — sans la décompresser.`
       : `échec du téléchargement : ${err.message||'erreur inconnue'}`;
     renderF();
-    rafraichirFenetre();
+    rafraichirFenetreSauvegarde();
     toast(bloque ? "Téléchargement direct refusé par Scryfall : passez par le lien puis le chargement de fichier."
                  : `Échec : ${err.message||'erreur inconnue'}.`);
+    return false;
   }
 }
 
@@ -888,48 +909,72 @@ async function chargerCatalogueComplet(force) {
         if (memo.v !== 2) CAT.detail = 'archive d\'une version antérieure : rechargez le fichier Scryfall pour obtenir les visuels des cartes.';
         invaliderCandidats();
         renderAll();
-        if (Date.now() - (memo.date || 0) > 7 * 864e5) setTimeout(() => chargerCatalogueComplet(true), 4000);
         return;
       }
     }
-    if (await chargerCatalogueLocal()) return;
-    CAT.source = 'réseau'; CAT.detail = ''; CAT.partiel = false; renderF();
-    let info;
-    try {
-      const meta = await fetch('https://api.scryfall.com/bulk-data/oracle-cards');
-      if (!meta.ok) throw new Error('HTTP ' + meta.status);
-      info = await meta.json();
-    } catch(err) {
-      CAT.detail = `l'index des données groupées n'a pas répondu (${err.message||'requête bloquée'})`;
-      throw err;
-    }
-    renderF();
-    let brut;
-    try {
-      const rep = await fetch(info.download_uri);
-      if (!rep.ok) throw new Error('HTTP ' + rep.status);
-      brut = await rep.json();
-    } catch(err) {
-      CAT.detail = `le fichier groupé (data.scryfall.io) a été refusé : ${err.message||'requête bloquée'}. `
-        + `Posez le fichier de données Scryfall à côté de cette page, ou chargez-le depuis la fenêtre de sauvegarde.`;
-      throw err;
-    }
-    const parNom = new Map();
-    brut.forEach(sc => { const c = compacte(sc); if (c) retiens(parNom, c); });
-    CAT.cartes = [...parNom.values()];
-    invaliderCandidats();
-    CAT.maj = info.updated_at || null;
-    CAT.etat = 'ok';
-    CAT.octets = tailleEstimee(CAT.cartes);
-    CAT.date = Date.now();
-    appliqueCatalogueAuxCartes();
-    if (saveState !== 'desactive' && S.catalogueActif)
-      idbEcrire('cartes', {v:2, cartes:CAT.cartes, maj:CAT.maj, date:CAT.date, octets:CAT.octets, impressions:CAT.impressions||0}).catch(() => {});
-    renderAll();
+    CAT.etat = ''; renderF();
+    if (!force && await chargerCatalogueLocal()) return;
   } catch(err) {
     CAT.etat = (err instanceof TypeError) ? 'hors-ligne' : 'erreur';
     renderF();
+    return;
   }
+  /* Rien sur cet appareil : l'archive est téléchargée et extraite sans
+     fichier intermédiaire, comme le fait le bouton « Mettre à jour ». */
+  await telechargerCatalogue();
+}
+
+/* Enchaînement du démarrage : on regarde d'abord ce que cet appareil garde
+   déjà des cartes existantes, puis ce que Scryfall publie.
+     — rien d'archivé          → téléchargement immédiat, sans rien demander ;
+     — archive datée           → fenêtre modale qui propose la mise à jour.
+   « Plus tard » retient la version refusée pour ne pas reposer la question
+   avant que Scryfall n'en publie une autre. */
+async function demarrerCatalogue() {
+  if (!autoCatalogue()) { verifierMajCatalogue(); return; }
+  await chargerCatalogueComplet();
+  await verifierMajCatalogue();
+  if (catalogueAbsent()) return;
+  if (catalogueObsolete() && S.majIgnoree !== CAT.majDispo) proposerMajCatalogue();
+}
+
+/* Fenêtre signalant que les données des cartes ont pu changer. */
+function proposerMajCatalogue() {
+  const publiee = CAT.majDispo ? new Date(CAT.majDispo).toLocaleDateString('fr-FR') : '';
+  const locale = CAT.maj ? new Date(CAT.maj).toLocaleDateString('fr-FR') : '';
+  const poids = CAT.taille ? ` (${(CAT.taille/1048576).toFixed(0)} Mo)` : '';
+  openDialog('Cartes existantes : une version plus récente',
+    `<p class="small">${locale
+        ? `Les données de cartes archivées sur cet appareil datent du ${esc(locale)}, et Scryfall en publie du ${esc(publiee)}.`
+        : `Scryfall publie des données de cartes du ${esc(publiee)} ; celles de cet appareil ne portent pas de date.`}
+       Des cartes ont pu paraître, changer de texte ou de prix depuis.</p>
+     <p class="small muted">La mise à jour retélécharge l'archive${poids} et n'en garde que les données utiles, sans fichier intermédiaire. Votre collection, votre deck et vos réglages ne sont pas touchés.</p>`,
+    `<button type="button" class="btn" data-act="majPlusTard">Plus tard</button>
+     <button type="button" class="btn pri" data-act="majMaintenant">Mettre à jour</button>`);
+}
+
+/* Bouton « Mettre à jour » de la fenêtre de sauvegarde, et de la fenêtre
+   ci-dessus : on teste la version publiée, et l'archive n'est retéléchargée
+   que si elle manque ou si elle a vieilli. Les prix suivent dans la foulée. */
+async function majCatalogue() {
+  if (typeof fetch !== 'function') { toast('Mise à jour impossible dans ce contexte.'); return; }
+  if (CAT.etat === 'chargement') { toast('Un chargement du catalogue est déjà en cours.'); return; }
+  toast('Vérification des données publiées par Scryfall…');
+  const info = await verifierMajCatalogue();
+  if (!info && catalogueAbsent()) {
+    toast("Scryfall n'a pas répondu : mise à jour impossible pour l'instant.");
+    rafraichirFenetreSauvegarde();
+    return;
+  }
+  if (catalogueAbsent() || catalogueObsolete()) {
+    await telechargerCatalogue();
+    return;
+  }
+  S.majIgnoree = null;
+  toast('Données de cartes déjà à jour ; rafraîchissement des prix…');
+  await majPrix(true);
+  renderAll();
+  rafraichirFenetreSauvegarde();
 }
 
 function completeDepuisRec(c, rec) {

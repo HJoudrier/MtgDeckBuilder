@@ -79,11 +79,6 @@ document.addEventListener('click', ev => {
     return;
   }
 
-  if (act === 'chargerArch') {
-    chargerArchetypesEdhrec(true);
-    return;
-  }
-
   if (act === 'archMenu') {
     archOuvert = !archOuvert;
     majFenetreFiltres();
@@ -106,6 +101,26 @@ document.addEventListener('click', ev => {
     majFenetreFiltres();
     S.limitB = PAGE;
     renderAll();
+    return;
+  }
+
+  if (act === 'versionPrec' || act === 'versionSuiv') {
+    faireDefilerVersion(b.dataset.name, act === 'versionSuiv' ? 1 : -1);
+    return;
+  }
+
+  if (act === 'versionsPossedees' || act === 'versionsToutes') {
+    basculerSourceVersions(b.dataset.name, act === 'versionsToutes' ? 'toutes' : 'possedees');
+    return;
+  }
+
+  if (act === 'choisirVersion') {
+    choisirVersion(b.dataset.name, b.dataset.cle);
+    return;
+  }
+
+  if (act === 'appliquerFiltres') {
+    appliquerFiltres();
     return;
   }
 
@@ -299,11 +314,25 @@ document.addEventListener('click', ev => {
     return;
   }
 
-  if (act === 'catalogueVerifier') {
-    verifierMajCatalogue().then(j => {
-      if (j) toast(`Dernière mise à jour Scryfall : ${new Date(j.updated_at).toLocaleDateString('fr-FR')}.`);
-      else toast('Vérification Scryfall impossible.');
-    });
+  /* Bouton unique de la fenêtre de sauvegarde : il teste la version publiée
+     et ne retélécharge l'archive que si elle manque ou si elle a vieilli. */
+  if (act === 'catalogueMaj') {
+    majCatalogue();
+    return;
+  }
+
+  /* Fenêtre proposée au démarrage quand les données ont pu changer. */
+  if (act === 'majMaintenant') {
+    closeDialog();
+    telechargerCatalogue();
+    return;
+  }
+
+  if (act === 'majPlusTard') {
+    S.majIgnoree = CAT.majDispo;
+    scheduleSave();
+    closeDialog();
+    toast("Mise à jour reportée : elle reste accessible depuis la pastille de sauvegarde.");
     return;
   }
 
@@ -315,28 +344,9 @@ document.addEventListener('click', ev => {
       CAT.date = null;
       invaliderCandidats();
       renderAll();
-      const corps = document.getElementById('dlgBody');
-      if (corps) {
-        corps.innerHTML = corpsSauvegarde();
-        brancherRestauration();
-        brancherCatalogue();
-      }
+      rafraichirFenetreSauvegarde();
       toast("Archive du catalogue effacée.");
     });
-    return;
-  }
-
-  if (act === 'prixMaj') {
-    toast('Rafraîchissement des prix Cardmarket en cours…');
-    majPrix(true).then(() => {
-      renderAll();
-      const corps = document.getElementById('dlgBody');
-      if (corps) {
-        corps.innerHTML = corpsSauvegarde();
-        brancherRestauration();
-        brancherCatalogue();
-      }
-    }).catch(err => toast(`Échec : ${err.message||'erreur réseau'}.`));
     return;
   }
 
@@ -551,12 +561,6 @@ document.addEventListener('input', ev => {
 
 document.addEventListener('change', ev => {
   const t = ev.target;
-  if (t.dataset.filtre) {
-    majFiltre(t.dataset.filtre, t.value);
-    majResumeFiltres();
-    planifierRenduFiltres();
-    return;
-  }
   if (t.dataset.act === 'sort') {
     S.sort = t.value;
     renderB();
@@ -583,6 +587,9 @@ document.addEventListener('change', ev => {
 // Fermeture au clic sur l'arrière-plan (backdrop)
 const dlgEl = document.getElementById('dlg');
 if (dlgEl) {
+  /* Une fenêtre de filtres fermée autrement que par « Appliquer » revient
+     à l'état d'avant son ouverture, quel qu'ait été le geste. */
+  dlgEl.addEventListener('close', () => fermetureFiltres());
   dlgEl.addEventListener('click', ev => {
     if (ev.target === dlgEl) {
       const rect = dlgEl.getBoundingClientRect();
@@ -618,9 +625,11 @@ function demarrer() {
   }
   renderAll();
   loadSymbology();
-  reprendreArchetypesEdhrec().then(trouve => { if (trouve) renderAll(); });
-  verifierMajCatalogue();
-  if (autoCatalogue()) chargerCatalogueComplet();
+  reprendreArchetypesEdhrec().then(trouve => {
+    if (trouve) renderAll();
+    if (archetypesARevoir()) chargerArchetypesEdhrec();
+  });
+  demarrerCatalogue();
 }
 
 if (document.readyState === 'loading') {

@@ -356,14 +356,42 @@ dialog::backdrop{background:rgba(8,6,14,.7)}
 .dlg-b{padding:14px;display:flex;flex-direction:column;gap:10px;max-height:min(68vh,620px);overflow:auto}
 dialog.wide{max-width:min(760px,96vw)}
 .fiche{display:flex;gap:14px;flex-wrap:wrap}
+.fiche .visucol{display:flex;flex-direction:column;gap:7px;width:min(300px,50%);flex:0 0 auto}
+.fiche .visucol .visuwrap{width:100%}
 .fiche .visuwrap{display:flex;gap:7px;align-items:flex-start;width:min(300px,50%);flex:0 0 auto}
+/* Défilement des éditions possédées, sous le visuel de la fiche. */
+.vers{display:flex;flex-direction:column;gap:4px}
+.vers-src{display:flex;gap:0;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.vers-s{flex:1;padding:4px 6px;font-size:11.5px;border:0;background:var(--panel2);color:var(--dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vers-s+.vers-s{border-left:1px solid var(--line2)}
+.vers-s:hover:not(:disabled){color:var(--txt)}
+.vers-s[aria-pressed=true]{background:var(--brass);color:#1a1526;font-weight:600}
+.vers-s:disabled{opacity:.45;cursor:default}
+.vers-nav{display:flex;align-items:center;gap:6px}
+.vers-b{flex:0 0 auto;width:26px;height:26px;line-height:1;padding:0;font-size:16px;
+  border:1px solid var(--line2);border-radius:7px;background:var(--panel2);color:var(--txt)}
+.vers-b:hover{border-color:var(--brass);color:#fff}
+.vers-cap{flex:1;min-width:0;display:flex;align-items:baseline;justify-content:center;gap:6px;
+  font-size:12.5px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.vers-det{min-height:15px}
+.vers-ok{color:var(--brass)}
+.vers-pick{align-self:flex-start}
 .fiche .visu{flex:1;min-width:0;border-radius:10px;background:#191524;display:block}
+/* Visuel en cours de recherche : une carte vide, à ses proportions, et son
+   icône de chargement au centre. */
+.visu-attente{flex:1;min-width:0;aspect-ratio:5/7;border-radius:10px;background:#191524;
+  border:1px solid var(--line2);display:flex;align-items:center;justify-content:center}
+.spin{width:26px;height:26px;border-radius:50%;border:2px solid var(--line2);
+  border-top-color:var(--brass);animation:tourne .8s linear infinite}
+@keyframes tourne{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .spin{animation-duration:2.4s} }
 .miniface{flex:0 0 62px;padding:3px;border:1px solid var(--line2);border-radius:7px;background:var(--panel);
   cursor:pointer;display:block;text-align:center;line-height:1}
 .miniface:hover{border-color:var(--brass)}
 .miniface img{width:100%;border-radius:4px;display:block;background:#191524}
 .miniface span{font-size:9.5px;color:var(--dim);display:block;margin-top:3px;letter-spacing:.04em}
-@media (max-width:520px){ .fiche .visuwrap{width:100%;max-width:300px;margin:0 auto} }
+@media (max-width:520px){ .fiche .visucol,.fiche .visuwrap{width:100%;max-width:300px;margin:0 auto} }
 /* carte rendue en texte, quand le visuel manque */
 .carte-texte{
   flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;
@@ -386,6 +414,8 @@ dialog.wide{max-width:min(760px,96vw)}
 .puce::before{content:'▸';position:absolute;left:0;color:var(--brass)}
 @media (max-width:520px){ .fiche .visu{width:100%;max-width:260px;margin:0 auto} }
 .dlg-f{padding:12px 14px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+/* Un bouton poussé à gauche, le reste restant groupé à droite. */
+.dlg-f .foot-g{margin-right:auto}
 textarea{width:100%;min-height:150px;font-family:var(--mono);font-size:12px}
 @media (max-width:640px){
   .wrap{padding:8px 8px 70px}

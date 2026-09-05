@@ -89,14 +89,19 @@ function applyScryfall(sc, requested, imagesOnly) {
 
   if (target && (imagesOnly || !target.unknown)) {
     majTexteOracle(target, text);
+    completeImpression(target, sc);
     if (Array.isArray(sc.color_identity) && !/^basic land/i.test(target.type || '')) {
       target.identity = sc.color_identity.slice();
     }
     if (typeof sc.cmc === 'number') target.cmc = sc.cmc;
-    if (uris) {
+    /* Une illustration choisie à la main fait autorité : seule une réponse
+       portant sur cette impression-là peut la remplacer. */
+    const cleRep = cleImpression(sc.set, sc.collector_number);
+    if (uris && (!target.impressionChoisie || target.impressionChoisie === cleRep)) {
       target.img = uris.small || uris.normal;
       target.imgN = uris.normal || uris.large || target.img;
       target.imgL = uris.large || uris.png || target.imgN;
+      target.imgImpression = cleRep;
     }
     if (versoUris) {
       target.imgB = versoUris.normal || versoUris.small;
@@ -129,10 +134,12 @@ function applyScryfall(sc, requested, imagesOnly) {
   reanalyser(fresh);
 
   if (!target) {
+    completeImpression(fresh, sc);
     if (uris) {
       fresh.img = uris.small || uris.normal;
       fresh.imgN = uris.normal || uris.large || fresh.img;
       fresh.imgL = uris.large || uris.png || fresh.imgN;
+      fresh.imgImpression = cleImpression(sc.set, sc.collector_number);
     }
     if (versoUris) {
       fresh.imgB = versoUris.normal || versoUris.small;
@@ -143,12 +150,16 @@ function applyScryfall(sc, requested, imagesOnly) {
     return true;
   }
 
+  const edImportee = target.setImporte ? {set:target.set, num:target.num} : null;
   target = renameCard(target, sc.name);
   Object.assign(target, fresh, {name:target.name});
+  if (edImportee) { target.set = edImportee.set; target.num = edImportee.num; target.setImporte = true; }
+  completeImpression(target, sc);
   if (uris) {
     target.img = uris.small || uris.normal;
     target.imgN = uris.normal || uris.large || target.img;
     target.imgL = uris.large || uris.png || target.imgN;
+    target.imgImpression = cleImpression(sc.set, sc.collector_number);
   }
   if (versoUris) {
     target.imgB = versoUris.normal || versoUris.small;
@@ -162,12 +173,41 @@ function applyScryfall(sc, requested, imagesOnly) {
 const scryQueue = [];
 let scryBusy = false;
 
+/* Identifiant demandé à Scryfall : l'édition relevée à l'import quand la
+   carte en a une, le nom sinon. Le couple code d'édition + numéro de
+   collection ramène l'impression que vous possédez, avec son visuel, son
+   illustrateur et son prix. */
+function identScryfall(c) {
+  return (c.set && c.num && !c.impressionKO)
+    ? {set:String(c.set).toLowerCase(), collector_number:String(c.num).toLowerCase()}
+    : {name:c.name};
+}
+
+/* Retrouve la carte visée par une réponse, d'abord par l'édition demandée. */
+function cibleImpression(sc, parImpression) {
+  const k = cleImpression(sc.set, sc.collector_number);
+  return (k && parImpression && parImpression.get(k)) || null;
+}
+
+function indexImpressions(cartes) {
+  const m = new Map();
+  cartes.forEach(c => {
+    const k = c && cleImpression(c.set, c.num);
+    if (k && !m.has(k)) m.set(k, c);
+  });
+  return m;
+}
+
 /* Une carte mérite un aller-retour Scryfall tant qu'il lui manque son visuel
    (mode images) ou son texte oracle complet : la base intégrée n'en garde
-   qu'un résumé, ce qui coupait par exemple l'alternative d'un sort. */
+   qu'un résumé, ce qui coupait par exemple l'alternative d'un sort. Une
+   édition relevée à l'import justifie elle aussi un aller-retour : le visuel
+   affiché doit être celui de l'impression possédée, pas d'une autre. */
 function besoinScryfall(c) {
   if (!c || c.unknown) return false;
   if (S.images && !c.img && !c.imgTried) return true;
+  if (S.images && c.set && c.num && !c.impressionTried && !c.impressionKO && !c.impressionChoisie
+      && c.imgImpression !== cleImpression(c.set, c.num)) return true;
   return !c.textFull && !c.texteTried;
 }
 
@@ -177,7 +217,12 @@ function queueScryfall(cards) {
     if (!besoinScryfall(c)) return;
     c.imgTried = true;
     c.texteTried = true;
-    scryQueue.push(c.name);
+    c.impressionTried = true;
+    /* `imgTried` est posé dès la mise en file : il dit qu'on a demandé, pas
+       qu'on a reçu. Ce second drapeau, lui, dure le temps de l'aller-retour,
+       et c'est lui que la fiche regarde pour afficher son attente. */
+    c.imgEnCours = true;
+    scryQueue.push(c);
   });
   if (scryQueue.length && !scryBusy) runScryQueue();
 }
@@ -186,18 +231,29 @@ async function runScryQueue() {
   scryBusy = true;
   while (scryQueue.length && !S.scryHS) {
     const chunk = scryQueue.splice(0, 75);
+    const parImpression = indexImpressions(chunk);
     try {
       const r = await fetch('https://api.scryfall.com/cards/collection', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({identifiers: chunk.map(n => ({name: n}))})
+        body: JSON.stringify({identifiers: chunk.map(identScryfall)})
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
-      (j.data || []).forEach(sc => applyScryfall(sc, scryTarget(sc, null), true));
+      (j.data || []).forEach(sc =>
+        applyScryfall(sc, cibleImpression(sc, parImpression) || scryTarget(sc, null), true));
+      // une édition que Scryfall ne connaît pas (code ou numéro fautif) ne doit
+      // pas priver la carte de son visuel : elle repasse par son nom
+      (j.not_found || []).forEach(id => {
+        const c = id && id.set ? parImpression.get(cleImpression(id.set, id.collector_number)) : null;
+        if (c && !c.impressionKO) { c.impressionKO = true; scryQueue.push(c); }
+      });
     } catch(err) {
       S.scryHS = true;
       scryBusy = false;
+      chunk.forEach(c => c.imgEnCours = false);
+      scryQueue.forEach(c => c.imgEnCours = false);
+      if (typeof rafraichirFiche === 'function') rafraichirFiche();
       if (S.images) {
         S.imagesFailed = true;
         toast("Visuels indisponibles (hors ligne ou accès bloqué). L'affichage reste en mode texte.");
@@ -207,8 +263,10 @@ async function runScryQueue() {
       renderB();
       return;
     }
+    chunk.forEach(c => c.imgEnCours = false);
     renderB();
     renderE();
+    if (typeof rafraichirFiche === 'function') rafraichirFiche();
     if (typeof majApercu === 'function') majApercu();
     if (typeof scheduleSave === 'function') scheduleSave();
     await new Promise(res => setTimeout(res, 90));
@@ -233,16 +291,17 @@ async function completeUnknown(names) {
   async function passe(items, libelle) {
     for (let i = 0; i < items.length && !failed; i += 75) {
       const chunk = items.slice(i, i + 75);
+      const parImpression = indexImpressions(chunk.map(x => x.card));
       try {
         const r = await fetch('https://api.scryfall.com/cards/collection', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({identifiers: chunk.map(x => ({name: x.ident}))})
+          body: JSON.stringify({identifiers: chunk.map(x => x.ident)})
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
         (j.data || []).forEach(sc => {
-          const t = scryTarget(sc, map);
+          const t = cibleImpression(sc, parImpression) || scryTarget(sc, map);
           if (t && reste.has(t) && applyScryfall(sc, t)) { ok++; reste.delete(t); }
         });
       } catch(err) { failed = err.message || 'réseau indisponible'; return; }
@@ -251,10 +310,22 @@ async function completeUnknown(names) {
     }
   }
 
-  await passe(todo.map(c => ({ident: c.name})), 'Complétion');
+  // l'édition relevée à l'import passe en premier : elle désigne
+  // l'impression exacte, donc le bon visuel et le bon prix
+  const parEdition = todo.filter(c => c.set && c.num);
+  let ok0 = 0;
+  if (parEdition.length) {
+    await passe(parEdition.map(c => ({ident:identScryfall(c), card:c})), 'Éditions');
+    ok0 = ok;
+    // une édition restée sans réponse est fautive, sauf si c'est le réseau
+    // qui a manqué : la carte repassera alors par son nom
+    if (!failed) parEdition.forEach(c => { if (reste.has(c)) c.impressionKO = true; });
+  }
+
+  if (!failed) await passe([...reste].map(c => ({ident:{name:c.name}, card:c})), 'Complétion');
 
   const dfc = [...reste].filter(c => c.name.includes(' // '));
-  if (dfc.length && !failed) await passe(dfc.map(c => ({ident: frontFace(c.name)})), 'Faces avant');
+  if (dfc.length && !failed) await passe(dfc.map(c => ({ident:{name:frontFace(c.name)}, card:c})), 'Faces avant');
 
   const flous = [...reste].slice(0, 60);
   for (const c of flous) {
@@ -273,7 +344,7 @@ async function completeUnknown(names) {
   renderAll();
   const manquantes = [...reste].map(c => c.name);
   if (failed) toast(`Complétion interrompue (${failed}). ${ok} carte(s) complétées, les autres restent importées avec des informations minimales.`);
-  else toast(`${ok} carte(s) complétées${manquantes.length ? ` · ${manquantes.length} introuvable(s) : ${manquantes.slice(0,3).join(', ')}${manquantes.length>3?'…':''}` : ''}.`);
+  else toast(`${ok} carte(s) complétées${ok0 ? ` · dont ${ok0} dans l'édition demandée` : ''}${manquantes.length ? ` · ${manquantes.length} introuvable(s) : ${manquantes.slice(0,3).join(', ')}${manquantes.length>3?'…':''}` : ''}.`);
 }
 
 let scrySeq = 0, scryTimer = null, scryRes = new Map(), scryEtat = '';
@@ -299,6 +370,121 @@ async function chercheScryfall(q, cible) {
     scryEtat = 'hors-ligne';
   }
   majResultats(cible, true);
+}
+
+/* Visuels de chaque édition possédée, pour les faire défiler dans la fiche.
+   Une seule requête par carte, à l'ouverture de la fiche, et seulement si la
+   collection en compte plusieurs. L'édition déjà affichée est reprise telle
+   quelle : elle n'a pas à être redemandée. */
+function semeVisuelVersion(card) {
+  card.visuels = card.visuels || {};
+  const cle = cleImpression(card.set, card.num);
+  if (cle && !card.visuels[cle] && card.imgImpression === cle && (card.imgN || card.img)) {
+    card.visuels[cle] = {
+      img: card.img || '', imgN: card.imgN || '', imgL: card.imgL || '',
+      artist: card.artist || '', setName: card.setName || '', price: card.price || 0,
+      cmUrl: card.cmUrl || ''
+    };
+  }
+  return card.visuels;
+}
+
+function visuelDepuisScryfall(sc) {
+  const faces = sc.card_faces && sc.card_faces.length ? sc.card_faces : null;
+  const uris = sc.image_uris || (faces && faces[0] && faces[0].image_uris) || null;
+  if (!uris) return null;
+  const pr = sc.prices || {};
+  return {
+    img: uris.small || uris.normal || '',
+    imgN: uris.normal || uris.large || uris.small || '',
+    imgL: uris.large || uris.png || uris.normal || '',
+    artist: sc.artist || (faces && faces[0] && faces[0].artist) || '',
+    setName: sc.set_name || '',
+    price: parseFloat(pr.eur || pr.eur_foil || 0) || 0,
+    cmUrl: (sc.purchase_uris && sc.purchase_uris.cardmarket) || ''
+  };
+}
+
+async function chercheImpressions(card) {
+  if (!card || S.scryHS || typeof fetch !== 'function') return false;
+  const vs = versionsCarte(card);
+  if (vs.length < 2) return false;
+  const connus = semeVisuelVersion(card);
+  const manquants = vs.filter(v => cleVersion(v) && !connus[cleVersion(v)]).slice(0, 75);
+  if (!manquants.length || card.visuelsTried) return false;
+  card.visuelsTried = true;
+  card.visuelsEnCours = true;
+  try {
+    const r = await fetch('https://api.scryfall.com/cards/collection', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({identifiers: manquants.map(v =>
+        ({set: String(v.set).toLowerCase(), collector_number: String(v.num).toLowerCase()}))})
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    (j.data || []).forEach(sc => {
+      const u = visuelDepuisScryfall(sc);
+      const cle = cleImpression(sc.set, sc.collector_number);
+      if (u && cle) card.visuels[cle] = u;
+    });
+    /* Une édition que Scryfall ne connaît pas est retenue comme telle, pour
+       ne pas la redemander à chaque ouverture de la fiche. */
+    (j.not_found || []).forEach(id => {
+      const cle = id && id.set ? cleImpression(id.set, id.collector_number) : '';
+      if (cle && !card.visuels[cle]) card.visuels[cle] = {ko: true};
+    });
+    return true;
+  } catch(err) {
+    card.visuelsTried = false;
+    return false;
+  } finally {
+    card.visuelsEnCours = false;
+  }
+}
+
+/* Toutes les éditions publiées d'une carte, à la demande seulement : une
+   recherche « unique=prints », dont on suit les pages jusqu'à trois. Les
+   éditions numériques sont écartées — la collection et les prix affichés
+   sont ceux du papier. */
+async function chercheToutesEditions(card) {
+  if (!card || typeof fetch !== 'function') return false;
+  if (card.editionsEtat === 'chargement' || card.editionsEtat === 'ok') return false;
+  card.editionsEtat = 'chargement';
+  card.editionsErreur = '';
+  const nom = String(card.name || '').replace(/"/g, '');
+  let url = 'https://api.scryfall.com/cards/search?unique=prints&order=released&dir=desc&q='
+          + encodeURIComponent('!"' + nom + '" game:paper');
+  const out = [];
+  try {
+    for (let page = 0; page < 3 && url; page++) {
+      const r = await fetch(url);
+      if (r.status === 404) break;   // recherche sans résultat : liste vide, pas une panne
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      (j.data || []).forEach(sc => {
+        const u = visuelDepuisScryfall(sc);
+        if (!u) return;
+        const faces = sc.card_faces && sc.card_faces.length ? sc.card_faces : null;
+        const verso = (faces && faces[1] && faces[1].image_uris) || null;
+        out.push(Object.assign({
+          set: String(sc.set || '').toUpperCase(),
+          num: sc.collector_number == null ? '' : String(sc.collector_number),
+          sortie: sc.released_at || '',
+          imgB: verso ? (verso.normal || verso.small || '') : '',
+          imgBL: verso ? (verso.large || verso.normal || '') : ''
+        }, u));
+      });
+      url = j.has_more ? j.next_page : '';
+      if (url) await new Promise(res => setTimeout(res, 120));
+    }
+    card.editions = out;
+    card.editionsEtat = 'ok';
+  } catch(err) {
+    card.editionsEtat = 'erreur';
+    card.editionsErreur = err.message || 'échec réseau';
+  }
+  return true;
 }
 
 async function chercheVerso(card) {

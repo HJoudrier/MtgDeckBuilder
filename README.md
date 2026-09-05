@@ -85,7 +85,7 @@ rôles de deck déduits du texte oracle, et tables d'affichage des archétypes �
 fonctionnement — dont la liste et le contenu viennent d'EDHREC. Les textes livrés avec l'atelier sont des résumés :
 ils sont remplacés par le texte oracle complet dès que Scryfall ou le catalogue local répond.
 
-*21 fonction(s), 37 Ko*
+*25 fonction(s), 38 Ko*
 
 Données : `RAW`, `DB`, `TYPE_ORDER`, `BUILTIN`, `CATLABEL`, `ARCH_LABELS`, `ARCH_RESUMES`
 
@@ -103,21 +103,27 @@ Données : `RAW`, `DB`, `TYPE_ORDER`, `BUILTIN`, `CATLABEL`, `ARCH_LABELS`, `ARC
 | `mainType(c)` | Type principal en français, face avant pour les cartes multi-faces. |
 | `reanalyser(card)` | Refait analyse, rôles et archétypes après un changement de texte ou de force. |
 | `majTexteOracle(card,texte)` | Remplace le résumé de la base intégrée par le texte oracle complet d'une source officielle, puis relance l'analyse. |
-| `seedCollection()` | Collection de démonstration, au premier lancement. |
 | `mergeInto(card,canonical)` | Fusionne deux entrées désignant la même carte. |
 | `renameCard(card,newName)` | Renomme une carte vers son nom canonique en migrant les quantités. |
 | `frontFace(n)` | Nom de la face avant d'une carte recto-verso. |
+| `cleImpression(set,num)` | Clé d'une impression : code d'édition et numéro de collection. |
+| `noterImpression(card,set,num,qty)` | Relève l'édition lue dans une liste importée ; la première numérotée devient l'édition de référence. |
+| `completeImpression(card,sc)` | Complète l'édition d'après Scryfall, sans écraser celle relevée à l'import. |
+| `libelleImpression(card)` | Écrit l'édition de référence : « LTC n°344 ». |
+| `versionsCarte(card)` | Éditions de la carte présentes dans la collection, celles que la fiche fait défiler. |
+| `cleVersion(v)` | Clé « set\|numéro » d'une de ces éditions. |
+| `versionRetenue(card)` | Édition affichée en priorité : celle choisie, sinon celle relevée à l'import. |
 | `scryTarget(sc,map)` | Retrouve la carte locale correspondant à une réponse Scryfall. |
 
 ### `js/etat.js` — État et filtrage
 
 L'objet d'état unique, les formats de jeu et les fonctions qui dérivent collection filtrée, deck, disponibilité et liste d'achat.
-C'est aussi ici que vivent les filtres de l'en-tête : les couleurs (`S.colors`, `S.colorMode`), la recherche
-libre (`S.search`), le type de carte (`S.typeFilter`) et les critères de `S.filtres` (archétypes, nom,
-illustrateur, force, endurance, coût de mana, prix), ainsi que l'index des archétypes établis par EDHREC
-(`ARCH_BASE`).
+C'est aussi ici que vivent les filtres de l'en-tête : les couleurs (`S.colors`, `S.colorMode`) et, dans
+`S.filtres`, tous les autres critères, dans l'ordre même où la fenêtre les présente — nom, type, texte de
+règles, archétype, rôle, force, endurance, coût de mana, prix, illustrateur. S'y ajoute l'index des archétypes établis par
+EDHREC (`ARCH_BASE`).
 
-*22 fonction(s), 11 Ko*
+*20 fonction(s), 11 Ko*
 
 Données : `FORMATS`, `S`, `PAGE`, `FILTRES_VIDE`, `FILTRES_BORNES`, `ARCH_BASE`
 
@@ -127,13 +133,11 @@ Données : `FORMATS`, `S`, `PAGE`, `FILTRES_VIDE`, `FILTRES_BORNES`, `ARCH_BASE`
 | `eur(n)` | Formatage d'un montant en euros. |
 | `esc(s)` | Échappement HTML. |
 | `colorOK(card)` | Applique le filtre de couleur de la fenêtre des filtres à une carte. |
-| `carteFiltree(card)` | Prédicat unique : couleurs, recherche, type, rôle et critères de la fenêtre. Vaut pour la collection, le deck, la courbe et les suggestions. |
+| `carteFiltree(card)` | Prédicat unique : couleurs, rôle et critères de la fenêtre. Vaut pour la collection, le deck, la courbe et les suggestions. |
 | `rolesFiltre()` | Rôles cochés, lus depuis la liste conservée dans `S.filtres`. |
 | `basculerRole(role)` | Coche ou décoche un rôle ; sans argument, les efface tous. |
 | `roleOK(card)` | La carte tient au moins un des rôles cochés. |
-| `rechercheOK(card)` | La recherche libre : nom, type ou texte. |
-| `typeOK(card)` | Le type principal retenu dans la fenêtre. |
-| `filtreOK(card)` | Applique les filtres de la fenêtre (archétype, nom, illustrateur, force, endurance, coût, prix) à une carte. |
+| `filtreOK(card)` | Applique les filtres de la fenêtre (nom, type, texte de règles, archétype, force, endurance, coût, prix, illustrateur) à une carte. |
 | `archetypesFiltre()` | Archétypes cochés, lus depuis la liste conservée dans `S.filtres`. |
 | `basculerArchetype(id)` | Coche ou décoche un archétype. |
 | `archetypesDisponibles()` | Les thèmes publiés par EDHREC, avec libellé et résumé. |
@@ -143,9 +147,9 @@ Données : `FORMATS`, `S`, `PAGE`, `FILTRES_VIDE`, `FILTRES_BORNES`, `ARCH_BASE`
 | `archetypesCarte(card)` | Archétypes d'une carte, d'après les thèmes EDHREC chargés. |
 | `filtresActifs()` | Filtres en vigueur : libellé et clés à effacer, pour les puces de l'en-tête. |
 | `texteFiltresActifs(sep)` | Ces mêmes libellés mis bout à bout, pour les infobulles et les résumés. |
-| `majFiltre(cle,valeur)` | Écrit un champ de la fenêtre dans l'état, quelle que soit sa maison. |
+| `majFiltre(cle,valeur)` | Écrit un champ de la fenêtre dans `S.filtres`. |
 | `effacerFiltre(cles)` | Retire un filtre depuis la croix de sa puce. |
-| `reinitFiltres()` | Remet tous les filtres à vide, recherche et type compris. |
+| `reinitFiltres()` | Remet tous les filtres à vide. |
 | `nombreFiltre(v)` | Lit une borne numérique saisie ; renvoie `null` si le champ est vide. |
 | `collectionCards()` | Collection sous forme de paires carte / quantité. |
 | `filtered()` | Collection filtrée puis triée selon les réglages courants. |
@@ -181,6 +185,10 @@ Données : `CAT`, `IDB_NOM`, `CH`, `CDN`, `FICHIERS_LOCAUX`
 |---|---|
 | `loadSymbology()` *(async)* | Récupère les adresses officielles des symboles de mana. |
 | `chercheVerso(card)` *(async)* | Récupère le verso d'une carte recto-verso quand l'archive ne l'a pas. |
+| `chercheImpressions(card)` *(async)* | Visuels de chaque édition possédée, en une requête, à l'ouverture de la fiche. |
+| `chercheToutesEditions(card)` *(async)* | Toutes les éditions papier publiées, en « unique=prints », à la demande seulement. |
+| `semeVisuelVersion(card)` | Reprend le visuel déjà affiché comme celui de son édition, pour ne pas le redemander. |
+| `visuelDepuisScryfall(sc)` | Visuel, illustrateur, nom du set et prix d'une impression. |
 | `compacte(sc)` | Réduit une carte Scryfall aux champs utiles à l'analyse et au classement. |
 | `autoCatalogue()` | Décide si le catalogue peut se charger tout seul. |
 | `estGzip(nom,octets)` | Détecte une archive compressée par son nom ou sa signature. |
@@ -190,10 +198,14 @@ Données : `CAT`, `IDB_NOM`, `CH`, `CDN`, `FICHIERS_LOCAUX`
 | `lireCatalogueFichier(source,nom)` *(async)* | Lit une archive Scryfall en flux et en extrait le catalogue. |
 | `chargerCatalogueLocal()` *(async)* | Cherche une archive posée à côté de la page. |
 | `verifierMajCatalogue()` *(async)* | Interroge l'index Scryfall : date, adresse et taille de la version publiée. |
+| `catalogueAbsent()` | Dit si cet appareil n'a pas les cartes existantes. *(défini dans `etat.js`)* |
 | `catalogueObsolete()` | Compare l'archive locale à la version publiée. |
 | `majPrix(force)` *(async)* | Rafraîchit les prix des seules cartes possédées ou jouées. |
 | `telechargerCatalogue()` *(async)* | Télécharge l'archive et l'extrait sans fichier intermédiaire. |
-| `chargerCatalogueComplet(force)` *(async)* | Charge le catalogue : cache, puis fichier local, puis réseau. |
+| `chargerCatalogueComplet(force)` *(async)* | Charge le catalogue : cache, puis fichier local, puis téléchargement. |
+| `demarrerCatalogue()` *(async)* | Au démarrage : archive manquante → téléchargement, archive datée → fenêtre de proposition. |
+| `proposerMajCatalogue()` | Fenêtre modale signalant que les données des cartes ont pu changer. |
+| `majCatalogue()` *(async)* | Bouton « Mettre à jour » : teste la version publiée, retélécharge si besoin, sinon rafraîchit les prix. |
 | `completeDepuisRec(c,rec)` | Complète une carte existante avec ce que l'archive apporte de plus, texte oracle compris. |
 | `carteDuCatalogue(rec)` | Matérialise une carte du catalogue et l'analyse. |
 | `invaliderCandidats()` | Invalide la sélection mémorisée. |
@@ -205,22 +217,27 @@ Données : `CAT`, `IDB_NOM`, `CH`, `CDN`, `FICHIERS_LOCAUX`
 | `chargerCatalogue()` *(async)* | Chargement paginé par l'API, en secours de l'archive. |
 | `applyScryfall(sc,requested,imagesOnly)` | Applique une réponse Scryfall à une carte : texte, visuels, prix, verso. |
 | `besoinScryfall(c)` | Dit si une carte attend encore son visuel ou son texte oracle complet. |
-| `queueScryfall(cards)` | Met en file les cartes dont le visuel ou le texte complet manque. |
+| `identScryfall(c)` | Identifiant demandé à Scryfall : l'édition relevée à l'import, ou le nom. |
+| `cibleImpression(sc,parImpression)` | Retrouve la carte visée par une réponse, d'après l'édition demandée. |
+| `indexImpressions(cartes)` | Index des cartes d'un lot par leur impression. |
+| `queueScryfall(cards)` | Met en file les cartes dont le visuel, le texte complet ou l'édition possédée manque. |
 | `runScryQueue()` *(async)* | Vide cette file par lots, sans saturer le réseau. |
 | `chercheTexte(card)` *(async)* | Va chercher le texte oracle complet d'une seule carte, pour la fiche ouverte. |
-| `completeUnknown(names)` *(async)* | Complète les cartes importées, en trois passes de plus en plus tolérantes. |
+| `completeUnknown(names)` *(async)* | Complète les cartes importées : l'édition relevée d'abord, puis trois passes par nom de plus en plus tolérantes. |
 | `chercheScryfall(q,cible)` *(async)* | Recherche en ligne pour la boîte d'ajout. |
 
 ### `js/stockage.js` — Sauvegarde locale
 
 Instantané de l'état vers localStorage, archive du catalogue en IndexedDB, fenêtre de gestion des données.
 
-*16 fonction(s), 16 Ko*
+*18 fonction(s), 17 Ko*
 
 Données : `STORE_KEY`, `STORE_OFF`
 
 | Fonction | Rôle |
 |---|---|
+| `impressionSnap(c)` | Éditions d'une carte à conserver : impression de référence, impressions relevées et édition choisie. |
+| `impressionRestore(card,o)` | Rend ces éditions à la carte au chargement. |
 | `idb()` | Ouvre la base IndexedDB. |
 | `idbLire(cle)` | Lit une clé de l'archive. |
 | `idbEcrire(cle,val)` | Écrit une clé dans l'archive. |
@@ -234,6 +251,7 @@ Données : `STORE_KEY`, `STORE_OFF`
 | `pillSauvegarde()` | Pastille d'état affichée dans l'en-tête. |
 | `corpsSauvegarde()` | Contenu de la fenêtre de sauvegarde locale. |
 | `blocCatalogueSauvegarde()` | Section catalogue de cette fenêtre : état, taille, mises à jour. |
+| `rafraichirFenetreSauvegarde()` | Réécrit cette fenêtre sur place quand l'état du catalogue a bougé. |
 | `openSaveDialog()` | Ouvre la fenêtre de gestion des données. |
 | `brancherCatalogue()` | Branche les commandes du catalogue. |
 | `brancherRestauration()` | Branche le sélecteur de fichier de restauration. |
@@ -243,12 +261,14 @@ Données : `STORE_KEY`, `STORE_OFF`
 Statistiques d'inclusion et de synergie par commandant, thèmes de deck servant d'archétypes établis,
 combos répertoriés et combos à une carte près, plus le catalogue Scryfall complet et son archive IndexedDB.
 
-*45 fonction(s), 35 Ko*
+*48 fonction(s), 36 Ko*
 
 | Fonction | Rôle |
 |---|---|
-| `chargerArchetypesEdhrec(force)` *(async)* | Charge la liste des thèmes EDHREC, puis les thèmes déjà cochés. |
-| `chargerListeArchetypesEdhrec(force)` *(async)* | L'index des thèmes publiés, en une requête. |
+| `chargerArchetypesEdhrec()` *(async)* | Charge la liste des thèmes EDHREC, puis les thèmes déjà cochés. Appelée seule, au démarrage. |
+| `chargerListeArchetypesEdhrec()` *(async)* | L'index des thèmes publiés, en une requête. Renvoie sa trouvaille sans toucher au cache. |
+| `archetypesARevoir()` | Faut-il interroger EDHREC ? Rien en cache, ou liste vieille d'une semaine. |
+| `signatureArchetypes(liste)` | Empreinte d'une liste de thèmes, pour repérer un vrai changement. |
 | `chargerThemeEdhrec(slug)` *(async)* | Les cartes d'un thème, à sa première utilisation. |
 | `themesPageEdhrec(j)` | Thèmes, libellés et descriptions d'une page d'index, quelle que soit sa forme. |
 | `descriptionPageEdhrec(j)` | Description que la page d'un thème porte parfois en tête. |
@@ -317,7 +337,7 @@ Données : `VISUELS_CHARGES`
 | `panneauAchats()` | Panneau Cardmarket : budget, état, langue, vendeur. |
 | `listeSuggestions()` | Assemble les groupes par type et le filtre par rôle. |
 | `visuelsSuggestions(byType)` | Demande les visuels des propositions affichées. |
-| `chargeVisuelsClasses()` | Charge les visuels par lots, dans l'ordre du score. |
+| `chargeVisuelsClasses()` | Charge les visuels par lots de six, en relisant le document à chaque lot pour survivre à un nouveau rendu. |
 | `majHintF(sug,graphPicks)` | Met à jour l'indicateur de la section. |
 | `refreshSuggestions()` | Rafraîchit la liste sans toucher aux champs de saisie. |
 | `renderF()` | Rend la section des suggestions. |
@@ -325,13 +345,19 @@ Données : `VISUELS_CHARGES`
 ### `js/collection.js` — Collection
 
 Affichage en grille ou en liste, import MTGO par fichier ou par collage, recherche et ajout de cartes.
+Le code d'édition entre parenthèses et le numéro de collection qui le suit — « 1 Sol Ring (LTC) 344 »,
+« 1 [ELD#331] Arcane Signet » — sont relevés et conservés sur la carte : l'impression possédée est ensuite
+demandée telle quelle à Scryfall, avec son visuel, son illustrateur et son prix. La collection reste comptée
+par nom ; les éditions relevées s'ajoutent les unes aux autres sur la même carte.
 
-*8 fonction(s), 13 Ko*
+*10 fonction(s), 15 Ko*
 
 | Fonction | Rôle |
 |---|---|
 | `renderB()` | Rend la collection, en grille ou en liste, avec pagination ; les filtres se règlent dans l'en-tête. |
-| `parseMtgoList(txt)` | Lit une liste MTGO : quantités, éditions, réserve, commandant. |
+| `retireExtrait(s,i,n)` | Retire un fragment d'une ligne et recolle le reste. |
+| `extraitEdition(texte)` | Isole le code d'édition et le numéro de collection d'une ligne importée. |
+| `parseMtgoList(txt)` | Lit une liste MTGO : quantités, éditions et numéros de collection, réserve, commandant. |
 | `openImport(cible)` | Boîte d'import, par fichier, glisser-déposer ou collage. |
 | `ajouterCarte(c,q,cible,completer)` | Ajoute une carte à la collection ou au deck. |
 | `chercheCartes(q)` | Recherche par nom dans le catalogue local, filtrée par couleur. |
@@ -389,11 +415,17 @@ Données : `RETOURNEES`
 | `majFenetreFormat()` | Réécrit la fenêtre au changement de format. |
 | `ficheHTML(card)` | Fiche détaillée : rôles ligne à ligne et cartes du deck branchées, combos, capacités extraites, puis en bas de fiche les branchements possibles avec la collection filtrée. |
 | `ficheTexteHTML(card)` | Carte rendue en texte — coût, type, force/endurance, texte — à la place du visuel absent. |
+| `visuelAttenteHTML()` | Carte vide et son icône de chargement, le temps que le visuel arrive. |
+| `rafraichirFiche()` | Reconstruit la fiche ouverte quand Scryfall a répondu ou renoncé. |
 | `ficheImageKO(img)` | Bascule sur ce rendu texte quand le visuel ne se charge pas. |
 | `openCardModal(name)` | Ouvre la fiche dans une fenêtre. |
 | `renderTop()` | Barre d'en-tête : totaux, bouton « Filtres », puces des filtres actifs et état de sauvegarde. |
-| `openFiltresModal()` | Ouvre la fenêtre des filtres avancés depuis l'en-tête. |
-| `corpsFiltres()` | Contenu de cette fenêtre : couleurs, recherche, type, archétype, nom, illustrateur, force, endurance, coût de mana, prix. |
+| `openFiltresModal()` | Ouvre la fenêtre des filtres avancés depuis l'en-tête, et prend l'instantané auquel « Annuler » revient. |
+| `instantaneFiltres()` | Copie des critères et des couleurs, avant modification. |
+| `restaurerFiltres(memo)` | Repose un tel instantané. |
+| `appliquerFiltres()` | « Appliquer » : oublie l'instantané, puis ferme. |
+| `fermetureFiltres()` | Toute autre fermeture — Annuler, croix, Échap, arrière-plan — revient à l'instantané. |
+| `corpsFiltres()` | Contenu de cette fenêtre, dans l'ordre : couleur, nom, type, texte de règles, archétype, rôle, force, endurance, coût de mana, prix, illustrateur. |
 | `etatArchetypes()` | État de la base d'archétypes EDHREC, sous les boutons d'archétype. |
 | `ligneFiltre(kMin,kMax,label,aide,pas,min)` | Une ligne « critère min → max » de la fenêtre. |
 | `resumeFiltres()` | Décompte des cartes retenues et rappel des filtres actifs. |
@@ -404,6 +436,17 @@ Données : `RETOURNEES`
 | `aDeuxFaces(c)` | Détecte une carte recto-verso. |
 | `autreFace(c,grande)` | Face opposée, pour la vignette de retournement. |
 | `faceVisible(c,grande)` | Face actuellement affichée. |
+| `sourceVersions(card)` | Laquelle des deux listes la fiche montre : les éditions possédées ou toutes. |
+| `listeVersions(card)` | La liste correspondante. |
+| `possedeVersion(card,cle)` | Exemplaires possédés d'une édition, quelle que soit la liste montrée. |
+| `basculerSourceVersions(nom,src)` | Passe d'une liste à l'autre ; la première bascule lance la recherche. |
+| `versionRang(card)` | Rang de l'édition consultée dans la fiche ouverte. |
+| `versionCourante(card)` | L'édition consultée elle-même. |
+| `faireDefilerVersion(nom,pas)` | Passe à l'édition précédente ou suivante, en boucle. |
+| `visuelVersion(card,v,grande)` | Visuel d'une édition donnée. |
+| `visuelEnRecherche(card,v)` | Vrai tant qu'un aller-retour est en vol sans visuel à montrer. |
+| `sourceVoulue(card)` | Source demandée, même avant que sa recherche n'aboutisse. |
+| `choisirVersion(nom,cle)` | Retient une édition : elle devient celle de la carte, partout. |
 | `refCarte(nom)` | Nom de carte survolable et cliquable. |
 | `apercuTexte(c)` | Texte de l'aperçu volant : sauts de ligne rétablis, longueur bornée. |
 | `placerApercu(x,y)` | Place l'aperçu près du curseur sans sortir de l'écran. |
@@ -431,18 +474,48 @@ Données : `RETOURNEES`
 - Les évènements de l'interface passent tous par la délégation en place dans `app.js`, sur les attributs `data-act`, `data-card`, `data-node`, `data-filtre` et `data-card-name`.
 - Les données restent sur l'appareil : `localStorage` pour la collection et le deck, IndexedDB pour le catalogue des cartes
   et pour l'index des archétypes EDHREC.
+- Le catalogue des cartes existantes se tient à jour tout seul. Au lancement, `demarrerCatalogue()` regarde d'abord ce
+  que l'appareil garde — archive IndexedDB, puis fichier posé à côté de la page. S'il n'a rien, l'archive Scryfall est
+  téléchargée et extraite immédiatement, sans rien demander. S'il a une archive mais que Scryfall en publie une plus
+  récente, une fenêtre modale le signale et propose la mise à jour, qui passe par le même téléchargement ; « Plus tard »
+  retient la version refusée dans `S.majIgnoree`, si bien que la question n'est reposée qu'à la publication suivante.
+  Le même enchaînement est derrière le bouton « Mettre à jour » de la fenêtre de sauvegarde : il teste la version
+  publiée et ne retélécharge que si l'archive manque ou a vieilli, sinon il se contente de rafraîchir les prix.
 - Les rôles ne se lisent pas dans le texte brut : `categories()` croise le type de la carte avec ce que `analyze()` a
   relevé — ce que chaque capacité produit, sur qui porte l'effet (`textEff`), ce que les coûts consomment
   (`sacOutlet`) et ce qui la déclenche. Un terrain qui n'ajoute qu'un mana n'est pas du ramp, une carte qui se blesse
   elle-même ne fait pas de l'interaction, une contrainte qu'on s'impose n'est pas du stax.
 - Les jauges d'équilibre des rôles de la section Deck sont des filtres à part entière : les cocher agit partout, comme
   n'importe quel filtre de l'en-tête, et les mêmes boutons figurent dans la fenêtre des filtres.
+- La fiche d'une carte feuillette ses éditions, sous deux listes. « Mes éditions » vient de `card.impressions`,
+  relevées à l'import, dont `chercheImpressions()` rapporte les visuels en une requête à l'ouverture de la fiche.
+  « Toutes » vient de `chercheToutesEditions()`, une recherche Scryfall en « unique=prints » limitée au papier et
+  lancée seulement si on la demande — une carte peut compter des dizaines d'impressions, il n'y a pas lieu d'aller
+  les chercher à chaque fiche ouverte.
+- « Afficher cette illustration en priorité » écrit `card.impressionChoisie` et recopie visuel et illustrateur dans
+  la carte : tout ce qui lit `card.img*` suit sans rien changer — vignettes de la collection, aperçu au survol, deck.
+  L'édition de référence, le nom de set, le prix et le lien d'achat ne suivent que si l'édition est possédée : choisir
+  une illustration ne doit ni laisser croire qu'on possède l'impression, ni fausser le budget. Un choix explicite fait
+  ensuite autorité — `besoinScryfall()` cesse de vouloir corriger le visuel, et `applyScryfall()` ne le remplace que
+  sur réponse portant sur cette impression.
+- Le visuel d'une fiche a trois états : présent, en cours de recherche — une carte vide à ses proportions et son
+  icône de chargement — ou introuvable, auquel cas le panneau de texte prend sa place. Le second s'appuie sur des
+  drapeaux posés le temps de l'aller-retour (`imgEnCours`, `visuelsEnCours`, `editionsEtat`) : `imgTried`, posé dès la
+  mise en file, dit qu'on a demandé, pas qu'on a reçu. `rafraichirFiche()` reconstruit la fiche ouverte quand la file
+  Scryfall aboutit ou renonce, sans quoi l'attente resterait affichée.
+- Seule l'édition choisie est conservée d'une session à l'autre ; les visuels des autres sont redemandés à l'ouverture
+  de la fiche, pour ne pas alourdir la sauvegarde.
+- La fenêtre des filtres applique en direct : le décompte de cartes retenues suit la frappe. « Annuler » ne renonce
+  donc pas à appliquer, il revient à l'instantané pris à l'ouverture — critères et couleurs comprises. Seul
+  « Appliquer » garde ce qui est en vigueur ; la croix, Échap et l'arrière-plan valent Annuler.
 - Un filtre posé une fois vaut partout : `carteFiltree()` filtre la collection, le deck et sa courbe de mana,
   les statistiques, le graphe et les suggestions d'ajout. La taille du deck, sa conformité au format et
   l'équilibre des rôles restent calculés sur le deck entier.
-- Les archétypes viennent entièrement d'EDHREC : « Charger la liste EDHREC » récupère les thèmes qu'il publie, en une
-  requête, et la liste déroulante les affiche tous. Les cartes d'un thème ne sont cherchées qu'à sa première
-  utilisation, puis gardées en cache. `ARCH_LABELS` et `ARCH_RESUMES` ne servent qu'à l'affichage : un libellé français
+- Les archétypes viennent entièrement d'EDHREC, sans geste de l'utilisateur : la liste des thèmes se charge au
+  démarrage si rien n'est en cache, et se revérifie une fois par semaine. EDHREC ne publiant aucun manifeste daté,
+  cette vérification relit l'index et ne remplace la liste que si elle diffère vraiment ; si EDHREC ne répond pas, la
+  liste déjà connue reste en place et la date n'est pas touchée, si bien que le lancement suivant retente. Les cartes
+  d'un thème ne sont cherchées qu'à sa première utilisation, puis gardées en cache. `ARCH_LABELS` et `ARCH_RESUMES` ne servent qu'à l'affichage : un libellé français
   et une phrase de fonctionnement pour les thèmes les plus courants. Chaque thème affiche une phrase, sans exception :
   la nôtre, sinon celle qu'EDHREC publie, sinon une phrase formée sur son nom.
 

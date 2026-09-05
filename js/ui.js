@@ -56,6 +56,9 @@ function toast(msg) {
 function openDialog(title, bodyHTML, actionsHTML, grande) {
   const dlg = document.getElementById('dlg');
   if (!dlg) return;
+  /* Une autre fenêtre prend la place : l'instantané des filtres n'a plus
+     lieu d'être, sans quoi sa fermeture ferait reculer les filtres. */
+  filtresAvant = null;
   dlg.classList.toggle('grand', !!grande);
   dlg.classList.toggle('wide', !!grande);
   const headEl = document.getElementById('dlgTitle') || document.getElementById('dlgHead');
@@ -187,6 +190,152 @@ function faceVisible(card, grand) {
   return card.imgN || card.img || '';
 }
 
+/* ---------------------------------------------------------------------
+   Éditions d'une même carte : la fiche les fait défiler et permet d'en
+   retenir une. Le rang consulté ne vit que le temps de la fiche ouverte —
+   la fiche est reconstruite à chaque réponse de Scryfall, il ne doit donc
+   pas repartir de zéro tant qu'on regarde la même carte.
+   --------------------------------------------------------------------- */
+let versionVue = {nom:'', i:0, src:'possedees'};
+
+/* Deux sources : les éditions possédées, relevées à l'import, et toutes
+   celles que Scryfall publie — ces dernières n'étant cherchées que si on
+   les demande, pour ne pas lancer une recherche à chaque fiche ouverte. */
+function sourceVersions(card) {
+  return (versionVue.nom === card.name && versionVue.src === 'toutes'
+          && card.editionsEtat === 'ok') ? 'toutes' : 'possedees';
+}
+
+/* La source demandée, qui n'est pas encore la source affichée tant que la
+   recherche n'a pas abouti : c'est elle que la bascule doit montrer pressée. */
+function sourceVoulue(card) {
+  return (versionVue.nom === card.name && versionVue.src === 'toutes') ? 'toutes' : 'possedees';
+}
+
+function listeVersions(card) {
+  return sourceVersions(card) === 'toutes' ? (card.editions || []) : versionsCarte(card);
+}
+
+/* Exemplaires possédés d'une édition, quelle que soit la source affichée. */
+function possedeVersion(card, cle) {
+  const v = versionsCarte(card).find(x => cleVersion(x) === cle);
+  return v ? (v.qty || 0) : 0;
+}
+
+function versionRang(card) {
+  const vs = listeVersions(card);
+  if (!vs.length) return 0;
+  if (versionVue.nom !== card.name) {
+    const retenue = versionRetenue(card);
+    const i = vs.findIndex(v => cleVersion(v) === retenue);
+    versionVue = {nom: card.name, i: i >= 0 ? i : 0, src: 'possedees'};
+  }
+  return Math.min(Math.max(versionVue.i, 0), vs.length - 1);
+}
+
+function versionCourante(card) {
+  const vs = listeVersions(card);
+  return vs.length ? vs[versionRang(card)] : null;
+}
+
+function faireDefilerVersion(nom, pas) {
+  const card = find(nom); if (!card) return;
+  const vs = listeVersions(card);
+  if (vs.length < 2) return;
+  versionVue = {nom: card.name, i: (versionRang(card) + pas + vs.length) % vs.length,
+                src: sourceVersions(card)};
+  openCardModal(card.name);
+}
+
+/* Passe d'une source à l'autre ; la première bascule vers « toutes »
+   déclenche la recherche. */
+function basculerSourceVersions(nom, src) {
+  const card = find(nom); if (!card) return;
+  const poser = () => {
+    const vs = src === 'toutes' ? (card.editions || []) : versionsCarte(card);
+    const retenue = versionRetenue(card);
+    const i = vs.findIndex(v => cleVersion(v) === retenue);
+    versionVue = {nom: card.name, i: i >= 0 ? i : 0, src};
+    openCardModal(card.name);
+  };
+  if (src === 'toutes' && card.editionsEtat !== 'ok') {
+    versionVue = {nom: card.name, i: 0, src: 'toutes'};
+    /* La recherche est lancée avant le rendu : elle pose son drapeau tout de
+       suite, si bien que la fiche s'ouvre en annonçant l'attente. */
+    const enRoute = chercheToutesEditions(card);
+    openCardModal(card.name);
+    enRoute.then(() => {
+      if (document.getElementById('dlg') && document.getElementById('dlg').open) poser();
+    });
+    return;
+  }
+  poser();
+}
+
+/* Visuel d'une édition : porté par l'édition elle-même quand elle vient de
+   Scryfall, sinon cherché parmi les visuels rapportés pour les impressions
+   possédées, sinon celui de la carte s'il s'agit de son édition. */
+function visuelVersion(card, v, grand) {
+  if (!v) return faceVisible(card, grand);
+  const u = (v.imgN || v.img) ? v : (card.visuels || {})[cleVersion(v)];
+  if (!u || u.ko) {
+    return cleVersion(v) === cleImpression(card.set, card.num) ? faceVisible(card, grand) : '';
+  }
+  return (grand && u.imgL) ? u.imgL : (u.imgN || u.img || '');
+}
+
+/* Le visuel se cherche encore : rien à montrer pour l'instant, mais un
+   aller-retour est en vol. La fiche affiche alors une carte vide et son
+   icône de chargement, plutôt que de retomber sur le panneau de texte —
+   qui, lui, dit « pas de visuel », ce qui serait prématuré. */
+function visuelEnRecherche(card, v) {
+  if (!card || !S.images) return false;
+  if (card.editionsEtat === 'chargement') return true;
+  if (card.visuelsEnCours) return true;
+  if (v) {
+    const cle = cleVersion(v);
+    if ((card.visuels || {})[cle] || v.imgN || v.img) return false;
+    if (cle !== cleImpression(card.set, card.num)) return false;
+  }
+  return !!card.imgEnCours;
+}
+
+/* Retenir une édition : son illustration devient celle de la carte partout —
+   vignettes de la collection, aperçu au survol, deck. L'édition de référence,
+   le prix et le lien d'achat ne suivent que si cette édition est possédée :
+   choisir une illustration ne doit pas laisser croire qu'on possède
+   l'impression, ni fausser le budget. */
+function choisirVersion(nom, cle) {
+  const card = find(nom); if (!card || !cle) return;
+  const v = listeVersions(card).find(x => cleVersion(x) === cle)
+         || versionsCarte(card).find(x => cleVersion(x) === cle);
+  const u = (v && (v.imgN || v.img)) ? v : (card.visuels || {})[cle];
+  if (!v || !u || u.ko) return;
+  const possede = possedeVersion(card, cle) > 0;
+  card.impressionChoisie = cle;
+  card.imgImpression = cle;
+  if (u.img) card.img = u.img;
+  if (u.imgN) card.imgN = u.imgN;
+  if (u.imgL) card.imgL = u.imgL;
+  if (u.artist) card.artist = u.artist;
+  card.imgB = u.imgB || '';
+  card.imgBL = u.imgBL || '';
+  if (possede) {
+    card.set = v.set;
+    card.num = v.num;
+    card.setImporte = true;
+    card.impressionKO = false;
+    card.setName = u.setName || '';
+    if (u.price) card.price = u.price;
+    if (u.cmUrl) card.cmUrl = u.cmUrl;
+  }
+  RETOURNEES.delete(card.name);
+  if (typeof scheduleSave === 'function') scheduleSave();
+  renderAll();
+  openCardModal(card.name);
+  toast(`Illustration retenue : ${v.set}${v.num ? ' n°' + v.num : ''}${possede ? '' : ' (édition non possédée)'}.`);
+}
+
 function cardTile(e, ctx) {
   const c = e.card, dispo = availableFor(c), inDeck = S.deck.get(c.name) || 0;
   const isCmd = S.commander === c.name;
@@ -243,6 +392,7 @@ function cardRow(e, ctx) {
     <span class="cname" data-act="fiche" data-name="${esc(c.name)}">${esc(c.name)}</span>
     <span class="costs">${manaHTML(c, true)}</span>
     <span class="small muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(c.type)}</span>
+    ${c.set ? `<span class="mono small muted" title="Édition ${esc(c.setName || c.set)}${c.num?`, carte n°${esc(c.num)}`:''}">${esc(c.set)}${c.num?` ${esc(c.num)}`:''}</span>` : ''}
     <span class="mono small">${eur(c.price)}</span>
     <span class="mono small">${ctx==='deck'?`×${e.qty}`:`${e.qty} ex.`}</span>
     ${dispoBadge}
@@ -446,15 +596,16 @@ function corpsFiltres() {
       <div class="small muted">${esc(nomCombinaisonCouleurs(S.colors))} · même réglage que la barre de mana de l'en-tête.</div>
     </div>
     <div class="field">
-      <label class="lab" for="f_search">Recherche</label>
-      <input type="text" id="f_search" data-filtre="search" value="${esc(S.search)}" placeholder="nom, type ou texte de la carte…" autocomplete="off">
+      <label class="lab" for="f_nom">Nom</label>
+      <input type="text" id="f_nom" data-filtre="nom" value="${esc(f.nom)}" placeholder="ex. dragon, sol ring…" autocomplete="off">
     </div>
     <div class="field">
-      <label class="lab" for="f_typeFilter">Type de carte</label>
-      <select id="f_typeFilter" data-filtre="typeFilter">
-        <option value="">Tous les types</option>
-        ${TYPE_ORDER.map(t => `<option value="${esc(t)}" ${S.typeFilter === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}
-      </select>
+      <label class="lab" for="f_type">Type</label>
+      <input type="text" id="f_type" data-filtre="type" value="${esc(f.type)}" placeholder="ex. créature, artefact, human soldier…" autocomplete="off">
+    </div>
+    <div class="field">
+      <label class="lab" for="f_texte">Texte de règles</label>
+      <input type="text" id="f_texte" data-filtre="texte" value="${esc(f.texte)}" placeholder="ex. draw a card, sacrifice a creature…" autocomplete="off">
     </div>
     <div class="field">
       <label class="lab">Archétype</label>
@@ -469,11 +620,6 @@ function corpsFiltres() {
         <input type="text" id="f_archQ" data-archq placeholder="rechercher…" value="${esc(archRecherche)}" autocomplete="off">
         <div class="arch-liste">${listeArchetypesHTML()}</div>
       </div>` : ''}
-      <div class="row" style="gap:6px;align-items:center;margin-top:2px">
-        <button type="button" class="btn sm" data-act="chargerArch" ${ARCH_BASE.etat === 'chargement' ? 'disabled' : ''}>
-          ${ARCH_BASE.liste.length ? 'Recharger la liste EDHREC' : 'Charger la liste EDHREC'}
-        </button>
-      </div>
       <div class="small muted">Une carte est retenue si elle relève d'au moins un archétype coché.</div>
       <div class="small muted" id="archEtat">${etatArchetypes()}</div>
     </div>
@@ -485,21 +631,17 @@ function corpsFiltres() {
       </div>
       <div class="small muted">Mêmes rôles que les jauges d'équilibre de la section Deck : les cocher ici ou là revient au même.</div>
     </div>
-    <div class="field">
-      <label class="lab" for="f_nom">Nom de la carte</label>
-      <input type="text" id="f_nom" data-filtre="nom" value="${esc(f.nom)}" placeholder="ex. dragon, sol ring…" autocomplete="off">
-    </div>
-    <div class="field">
-      <label class="lab" for="f_artiste">Illustrateur</label>
-      <input type="text" id="f_artiste" data-filtre="artiste" value="${esc(f.artiste)}" placeholder="ex. John Avon, Rebecca Guay…" autocomplete="off">
-    </div>
     <div class="filtres-grille">
       ${ligneFiltre('forceMin', 'forceMax', 'Force', "Force des créatures (le premier chiffre de 3/4).", '1', 0)}
       ${ligneFiltre('enduranceMin', 'enduranceMax', 'Endurance', "Endurance des créatures (le second chiffre de 3/4).", '1', 0)}
       ${ligneFiltre('cmcMin', 'cmcMax', 'Coût de mana', "Valeur de mana totale de la carte.", '1', 0)}
       ${ligneFiltre('prixMin', 'prixMax', 'Prix (€)', "Prix unitaire estimé, en euros.", 'any', 0)}
     </div>
-    <div class="small muted">Laissez un champ vide pour ne pas l'utiliser. La recherche porte sur le nom, le type et le texte ; le champ « Nom » ne regarde que le nom. Dès qu'une borne de force ou d'endurance est posée, les cartes qui n'en ont pas (sorts, terrains) sont écartées ; de même, filtrer par illustrateur écarte les cartes dont l'illustrateur n'est pas encore connu.</div>
+    <div class="field">
+      <label class="lab" for="f_artiste">Illustrateur</label>
+      <input type="text" id="f_artiste" data-filtre="artiste" value="${esc(f.artiste)}" placeholder="ex. John Avon, Rebecca Guay…" autocomplete="off">
+    </div>
+    <div class="small muted">Laissez un champ vide pour ne pas l'utiliser. « Nom » ne regarde que le nom ; « Type » cherche dans la ligne de type, en français comme en anglais (« créature », « artifact », « human soldier ») ; « Texte de règles » cherche dans le texte d'Oracle de la carte, celui qui décrit ses capacités, et accepte une phrase entière. Dès qu'une borne de force ou d'endurance est posée, les cartes qui n'en ont pas (sorts, terrains) sont écartées ; de même, filtrer par illustrateur écarte les cartes dont l'illustrateur n'est pas encore connu.</div>
     <div class="small muted">Ces filtres s'ajoutent aux couleurs choisies ci-dessus ; ils valent pour la collection affichée et pour les analyses qui en découlent.</div>
     <div class="warnbox" id="filtreResume">${resumeFiltres()}</div>`;
 }
@@ -549,17 +691,17 @@ function etatArchetypes() {
     const essais = (ARCH_BASE.essais || []).length
       ? `<div class="mono" style="font-size:10.5px;margin-top:4px;white-space:pre-line">${esc(ARCH_BASE.essais.join('\n'))}</div>`
       : '';
-    return `EDHREC : ${esc(ARCH_BASE.erreur)}. Le texte de la carte reste lu localement.${essais}`;
+    return `EDHREC : ${esc(ARCH_BASE.erreur)}. Nouvelle tentative à la prochaine ouverture de l'atelier.${essais}`;
   }
   if (ARCH_BASE.liste.length) {
     const date = ARCH_BASE.maj ? new Date(ARCH_BASE.maj).toLocaleDateString('fr-FR') : '';
     const charges = Object.keys(ARCH_BASE.themes).length;
     const enCours = ARCH_BASE.enCours.size;
-    return `Liste établie par EDHREC : ${ARCH_BASE.liste.length.toLocaleString('fr-FR')} thème(s)${date ? `, relevés le ${date}` : ''}.
-      Les cartes d'un thème sont cherchées à sa première utilisation${charges ? ` — ${charges} déjà chargé(s), ${ARCH_BASE.index.size.toLocaleString('fr-FR')} carte(s) référencées` : ''}${enCours ? ` · ${enCours} en cours…` : ''}.`;
+    return `Liste établie par EDHREC : ${ARCH_BASE.liste.length.toLocaleString('fr-FR')} thème(s)${date ? `, relevés le ${date}` : ''},
+      revus une fois par semaine. Les cartes d'un thème sont cherchées à sa première utilisation${charges ? ` — ${charges} déjà chargé(s), ${ARCH_BASE.index.size.toLocaleString('fr-FR')} carte(s) référencées` : ''}${enCours ? ` · ${enCours} en cours…` : ''}.`;
   }
-  return `Les archétypes viennent d'EDHREC. « Charger la liste EDHREC » récupère les thèmes qu'il publie — une requête
-    pour la liste, puis une par thème à sa première utilisation, gardées en cache sur cet appareil.`;
+  return `Les archétypes viennent d'EDHREC : la liste se charge d'elle-même à l'ouverture de l'atelier, puis les cartes
+    d'un thème à sa première utilisation. Le tout est gardé en cache sur cet appareil.`;
 }
 
 /* Décompte des cartes retenues, rafraîchi à chaque frappe. */
@@ -603,12 +745,48 @@ function majFenetreFiltres() {
   if (nouveau) nouveau.scrollTop = yArch;
 }
 
+/* Les critères s'appliquent en direct pendant la saisie : c'est ce qui fait
+   vivre le décompte de cartes retenues. « Annuler » ne renonce donc pas à
+   appliquer, il revient à l'état d'avant l'ouverture — d'où cet instantané.
+   Il couvre tout ce que la fenêtre sait changer, couleurs comprises. */
+let filtresAvant = null;
+
+function instantaneFiltres() {
+  return {filtres: {...S.filtres}, colors: new Set(S.colors), colorMode: S.colorMode};
+}
+
+function restaurerFiltres(memo) {
+  if (!memo) return;
+  S.filtres = {...memo.filtres};
+  S.colors = new Set(memo.colors);
+  S.colorMode = memo.colorMode;
+}
+
+/* « Appliquer » garde ce qui est déjà en vigueur : il suffit d'oublier
+   l'instantané avant de fermer. */
+function appliquerFiltres() {
+  filtresAvant = null;
+  closeDialog();
+}
+
+/* Toute autre façon de fermer — Annuler, la croix, Échap, l'arrière-plan —
+   laisse l'instantané en place : `fermetureFiltres()` s'en sert pour revenir
+   en arrière. */
+function fermetureFiltres() {
+  if (!filtresAvant) return;
+  restaurerFiltres(filtresAvant);
+  filtresAvant = null;
+  S.limitB = PAGE;
+  renderAll();
+}
+
 function openFiltresModal() {
+  const memo = instantaneFiltres();
   openDialog('Filtres de la collection', corpsFiltres(),
-    `<button type="button" class="btn" data-act="resetFiltres">Réinitialiser</button>
-     <button type="button" class="btn pri" data-act="closeDialog">Fermer</button>`);
-  const champ = document.getElementById('f_search');
-  if (champ) champ.focus();
+    `<button type="button" class="btn foot-g" data-act="resetFiltres">Réinitialiser</button>
+     <button type="button" class="btn" data-act="closeDialog">Annuler</button>
+     <button type="button" class="btn pri" data-act="appliquerFiltres">Appliquer</button>`);
+  filtresAvant = memo;
 }
 
 function renderTop() {
@@ -724,15 +902,18 @@ function exportDeckModal() {
   const f = fmt();
   const date = new Date().toISOString().slice(0, 10);
   const nomFichier = `deck-${(S.commander || S.format || 'export').toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${date}`;
-  const txt = entries.map(e => `${e.qty} ${e.card.name}`).join('\n');
-  const csv = 'Quantity,Name,Mana Cost,Type,Price EUR\n' +
-    entries.map(e => `${e.qty},"${e.card.name.replace(/"/g,'""')}","${e.card.mana}","${e.card.type}",${e.card.price}`).join('\n');
+  // l'édition relevée à l'import repart avec la liste, au format qu'elle avait
+  const edTxt = c => c.set ? ` (${c.set})${c.num ? ' ' + c.num : ''}` : '';
+  const txt = entries.map(e => `${e.qty} ${e.card.name}${edTxt(e.card)}`).join('\n');
+  const csv = 'Quantity,Name,Set,Collector Number,Mana Cost,Type,Price EUR\n' +
+    entries.map(e => `${e.qty},"${e.card.name.replace(/"/g,'""')}","${e.card.set||''}","${e.card.num||''}","${e.card.cost}","${e.card.type}",${e.card.price}`).join('\n');
   const json = JSON.stringify({
     format: S.format,
     commander: S.commander,
     taille: deckSize(),
     date: new Date().toISOString(),
-    deck: entries.map(e => ({name:e.card.name, qty:e.qty, mana:e.card.mana, type:e.card.type, price:e.card.price}))
+    deck: entries.map(e => ({name:e.card.name, qty:e.qty, set:e.card.set||'', num:e.card.num||'',
+      mana:e.card.cost, type:e.card.type, price:e.card.price}))
   }, null, 2);
 
   openDialog('Exporter le deck',
