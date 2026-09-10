@@ -4,17 +4,7 @@
    ===================================================================== */
 
 document.addEventListener('click', ev => {
-  const head = ev.target.closest('.sec-head');
-  if (head) {
-    const sec = head.closest('section.sec');
-    if (sec) {
-      sec.classList.toggle('open');
-      head.setAttribute('aria-expanded', String(sec.classList.contains('open')));
-      return;
-    }
-  }
-
-  const b = ev.target.closest('button, [data-act], [data-node], [data-node2], [data-card], [data-view], [data-gsrc], [data-cmode], [data-color], [data-col]');
+  const b = ev.target.closest('button, [data-act], [data-node], [data-node2], [data-card], [data-onglet], [data-view], [data-gsrc], [data-cmode], [data-color], [data-col]');
   if (!b) return;
 
   const act = b.dataset.act;
@@ -26,18 +16,14 @@ document.addEventListener('click', ev => {
   }
   if (b.dataset.color || b.dataset.col) {
     const c = b.dataset.color || b.dataset.col;
-    if (S.colors.has(c)) S.colors.delete(c); else S.colors.add(c);
-    invaliderCandidats();
-    renderAll();
-    majFenetreFiltres();
+    modifieBrouillon(() => { if (S.colors.has(c)) S.colors.delete(c); else S.colors.add(c); });
+    apresReglage(`Couleur ${c} ${S.colors.has(c) ? 'ajoutée aux' : 'retirée des'} filtres : la collection affichée et les suggestions sont recalculées.`);
     return;
   }
 
   if (b.dataset.cmode) {
-    S.colorMode = b.dataset.cmode;
-    invaliderCandidats();
-    renderAll();
-    majFenetreFiltres();
+    modifieBrouillon(() => { S.colorMode = b.dataset.cmode; });
+    apresReglage('Mode de couleur changé : la collection affichée et les suggestions sont recalculées.');
     return;
   }
 
@@ -54,14 +40,25 @@ document.addEventListener('click', ev => {
     return;
   }
 
-  if (b.dataset.node || b.dataset.node2) {
+  /* Le nœud cliqué à même le graphe : une bascule, rien de plus. Les boutons
+     qui nomment leur geste — « retirer », « isoler dans le graphe » — passent
+     outre et gagnent leur propre branche, plus bas : sans cette réserve, la
+     bascule les happait tous, et « isoler » se contentait d'ajouter le nœud
+     sans fermer la fiche ni mener au graphe. */
+  if (!act && (b.dataset.node || b.dataset.node2)) {
     const id = b.dataset.node || b.dataset.node2;
     if (S.focusNodes.has(id)) S.focusNodes.delete(id);
     else S.focusNodes.add(id);
     invaliderCandidats();
     renderD();
-    renderF();
-    renderTop();
+    recalculerAvecProgression(`Effet ${(typeof NODE !== 'undefined' && NODE[id] && NODE[id].label) || id} ${S.focusNodes.has(id) ? 'isolé' : 'relâché'} : les candidates sont rebâties et notées.`);
+    return;
+  }
+
+  /* Les onglets : rien n'est recalculé, les sections étant toujours rendues.
+     La page voulue paraît, et c'est tout. */
+  if (b.dataset.onglet) {
+    activerOnglet(b.dataset.onglet);
     return;
   }
 
@@ -86,21 +83,31 @@ document.addEventListener('click', ev => {
   }
 
   if (act === 'toggleArch') {
-    basculerArchetype(b.dataset.arch);
-    // les cartes du thème coché sont cherchées à la demande
-    archetypesAChargerEdhrec().forEach(slug => chargerThemeEdhrec(slug));
+    modifieBrouillon(() => basculerArchetype(b.dataset.arch));
+    /* Les cartes du thème coché sont cherchées à la demande, sur ce qui est
+       coché dans la fenêtre : sans cela le décompte annoncerait zéro. */
+    avecBrouillon(() => archetypesAChargerEdhrec()).forEach(slug => chargerThemeEdhrec(slug));
+    apresReglage('Filtre par archétype modifié : les cartes retenues et les suggestions sont recalculées.');
+    return;
+  }
+
+  if (act === 'setMenu') {
+    setOuvert = !setOuvert;
     majFenetreFiltres();
-    majResumeFiltres();
-    S.limitB = PAGE;
-    renderAll();
+    return;
+  }
+
+  if (act === 'toggleSet') {
+    modifieBrouillon(() => basculerSet(b.dataset.set));
+    // les cartes du set coché sont cherchées à la demande, comme les thèmes
+    avecBrouillon(() => setsACharger()).forEach(code => chargerSetScryfall(code));
+    apresReglage('Filtre par set modifié : les cartes retenues et les suggestions sont recalculées.');
     return;
   }
 
   if (act === 'dropFiltre') {
-    effacerFiltre((b.dataset.cles || '').split(',').filter(Boolean));
-    majFenetreFiltres();
-    S.limitB = PAGE;
-    renderAll();
+    modifieBrouillon(() => effacerFiltre((b.dataset.cles || '').split(',').filter(Boolean)));
+    apresReglage('Filtre retiré : les cartes qu\'il écartait reviennent, et les suggestions sont recalculées.');
     return;
   }
 
@@ -124,11 +131,44 @@ document.addEventListener('click', ev => {
     return;
   }
 
+  if (act === 'interrompreCatalogue') {
+    interrompreCatalogue();
+    return;
+  }
+
+  if (act === 'appliquerFormat') {
+    appliquerFormat();
+    return;
+  }
+
+  /* L'engrenage de l'entête, et les deux anciens noms que des boutons de
+     l'atelier appellent encore — charger une archive, régler le catalogue :
+     tout mène à la même fenêtre, où ces réglages vivent désormais ensemble. */
+  if (act === 'parametres' || act === 'catalogueDialog' || act === 'saveDialog') {
+    openParametresModal();
+    return;
+  }
+
+  if (act === 'appliquerParametres') {
+    appliquerParametres();
+    return;
+  }
+
+  if (act === 'budgetDialog') {
+    openBudgetModal();
+    return;
+  }
+
+  if (act === 'appliquerBudget') {
+    appliquerBudget();
+    return;
+  }
+
   if (act === 'resetFiltres') {
-    reinitFiltres();
-    majFenetreFiltres();
-    S.limitB = PAGE;
-    renderAll();
+    /* « Réinitialiser » dans la fenêtre vide le brouillon ; « Tout effacer »
+       dans l'en-tête vide l'état, et s'applique aussitôt. */
+    modifieBrouillon(() => reinitFiltres());
+    apresReglage('Filtres réinitialisés : tout l\'atelier est repris sans eux.');
     toast('Filtres réinitialisés.');
     return;
   }
@@ -139,20 +179,38 @@ document.addEventListener('click', ev => {
   }
 
   if (act === 'toggleRole') {
-    basculerRole(b.dataset.role || '');
-    majFenetreFiltres();
-    S.limitB = PAGE;
-    renderAll();
+    /* Les mêmes rôles se cochent depuis les jauges de la section Deck :
+       hors de la fenêtre, `modifieFiltres` agit sur l'état lui-même. */
+    modifieBrouillon(() => basculerRole(b.dataset.role || ''));
+    apresReglage('Filtre par rôle modifié : les cartes retenues et les suggestions sont recalculées.');
     return;
   }
 
   if (act === 'pageType') {
     const t = b.dataset.type, pas = b.dataset.pas;
     const all = currentSuggestions();
-    const total = (t === 'edhrec')
-      ? all.filter(s => s.edhrec).length
-      : all.filter(s => mainType(s.card) === t).length;
-    const defaultLim = (t === 'edhrec') ? 8 : 6;
+    /* Trois familles de listes paginées, chacune sachant dire son total et son
+       compte par défaut :
+       — les deux listes courtes du graphe et d'EDHREC sans groupe
+         (`LISTES_SUG`, js/suggestions.js) ;
+       — les catégories d'EDHREC quand cet onglet est groupé, sous des clés
+         préfixées « edhrec: » pour ne pas partager leur compte avec celles du
+         catalogue ;
+       — les catégories du catalogue, où le groupe est celui du rangement en
+         cours, non plus le seul type principal. */
+    let total = 0, defaultLim = 6;
+    if (LISTES_SUG[t]) {
+      const sel = selectionSuggestions();
+      total = t === 'graphe' ? sel.graphPicks.length : sel.edhrecPicks.length;
+      defaultLim = LISTES_SUG[t].defaut;
+    } else if (t.indexOf('edhrec:') === 0) {
+      const g = groupeCartes(selectionSuggestions().edhrecPicks, S.groupes.edhrec, null)
+        .find(x => cleLimiteEdhrec(x.id) === t);
+      total = g ? g.total : 0;
+    } else {
+      const g = groupeCartes(all, S.groupes.suggestions, null).find(x => x.id === t);
+      total = g ? g.total : 0;
+    }
     if (pas === 'tout') S.limiteType[t] = total;
     else if (pas === 'reduire') S.limiteType[t] = defaultLim;
     else S.limiteType[t] = Math.min(total, (S.limiteType[t] || defaultLim) + parseInt(pas, 10));
@@ -161,25 +219,21 @@ document.addEventListener('click', ev => {
   }
 
   if (act === 'allColors') {
-    S.colors = new Set(['W','U','B','R','G','C']);
-    invaliderCandidats();
-    renderAll();
-    majFenetreFiltres();
+    modifieBrouillon(() => { S.colors = new Set(['W','U','B','R','G','C']); });
+    apresReglage('Toutes les couleurs retenues : la collection affichée et les suggestions sont recalculées.');
     return;
   }
 
   if (act === 'clearColors' || act === 'noColors') {
-    S.colors = new Set();
-    invaliderCandidats();
-    renderAll();
-    majFenetreFiltres();
+    modifieBrouillon(() => { S.colors = new Set(); });
+    apresReglage('Plus aucune couleur retenue : la collection affichée et les suggestions sont recalculées.');
     return;
   }
 
   if (act === 'inc') {
     const n = b.dataset.name;
     S.collection.set(n, (S.collection.get(n) || 0) + 1);
-    renderAll();
+    recalculerAvecProgression(`${n} : un exemplaire de plus en collection, les suggestions en tiennent compte.`);
     return;
   }
 
@@ -187,11 +241,15 @@ document.addEventListener('click', ev => {
     const n = b.dataset.name;
     const c = S.collection.get(n) || 0;
     if (c <= 1) S.collection.delete(n); else S.collection.set(n, c - 1);
-    renderAll();
+    recalculerAvecProgression(`${n} : un exemplaire de moins en collection, les suggestions en tiennent compte.`);
     return;
   }
 
   if (act === 'toDeck') {
+    /* Depuis une vignette de suggestion : l'ordre affiché est gelé et la
+       section rafraîchie en place, pour ne pas renvoyer au début celui qui
+       en parcourait le milieu. */
+    if (b.closest('.sugT')) geleSuggestions();
     addToDeck(b.dataset.name);
     if (document.getElementById('dlg') && document.getElementById('dlg').open) {
       openCardModal(b.dataset.name);
@@ -207,15 +265,105 @@ document.addEventListener('click', ev => {
     return;
   }
 
+  if (act === 'plierPartie') {
+    /* Comme l'en-tête d'une section : la classe bascule sur place. Repasser
+       par `renderE()` renoterait toutes les cartes du deck pour un pli. */
+    const cle = b.dataset.partie;
+    const bloc = document.getElementById('partie-' + cle);
+    if (!bloc) return;
+    const ouverte = bloc.classList.toggle('ouverte');
+    b.setAttribute('aria-expanded', String(ouverte));
+    b.setAttribute('title', ouverte ? 'Replier cette partie' : 'Déplier cette partie');
+    if (ouverte) S.deckPlie.delete(cle); else S.deckPlie.add(cle);
+    scheduleSave();
+    return;
+  }
+
+  /* Le pli d'une catégorie. Il suit celui des parties du deck, à une nuance
+     près : dans la collection, une catégorie repliée ne consomme aucune place
+     dans la page, si bien que le pli change ce qui s'affiche et que la section
+     se redessine. Ailleurs il n'est qu'affichage, et la classe bascule sur
+     place — repasser par `renderE()` renoterait tout le deck pour un pli, et
+     réécrire `#sugList` ferait perdre sa place au lecteur. */
+  if (act === 'plierGroupe') {
+    const cle = b.dataset.cle;
+    if (S.groupesPlies.has(cle)) S.groupesPlies.delete(cle); else S.groupesPlies.add(cle);
+    scheduleSave();
+    if (b.dataset.section === 'collection') { renderB(); return; }
+    const bloc = b.closest('.partie');
+    if (!bloc) return;
+    const ouverte = bloc.classList.toggle('ouverte');
+    b.setAttribute('aria-expanded', String(ouverte));
+    b.setAttribute('title', ouverte ? 'Replier cette catégorie' : 'Déplier cette catégorie');
+    return;
+  }
+
+  if (act === 'toAnnexe') {
+    versAnnexe(b.dataset.name, b.dataset.liste);
+    if (document.getElementById('dlg') && document.getElementById('dlg').open) {
+      openCardModal(b.dataset.name);
+    }
+    return;
+  }
+
+  if (act === 'dropAnnexe') {
+    retirerAnnexe(b.dataset.name, b.dataset.liste);
+    if (document.getElementById('dlg') && document.getElementById('dlg').open) {
+      openCardModal(b.dataset.name);
+    }
+    return;
+  }
+
+  if (act === 'clearAnnexe') {
+    const cle = b.dataset.liste, a = ANNEXES[cle];
+    openDialog(`Vider ${a.article}`,
+      `<p class="small">Cette action retire les ${annexeSize(cle)} carte(s) de ${esc(a.article)}. Le deck et la collection sont conservés.</p>`,
+      '<button class="btn" value="cancel" onclick="closeDialog()">Annuler</button><button class="btn danger" id="okClearAnnexe" value="ok">Vider</button>');
+    const ok = document.getElementById('okClearAnnexe');
+    if (ok) ok.onclick = () => { closeDialog(); viderAnnexe(cle); };
+    return;
+  }
+
   if (act === 'deckDrop') {
     S.deck.delete(b.dataset.name);
     if (S.commander === b.dataset.name) S.commander = null;
-    renderAll();
+    recalculerAvecProgression(`${b.dataset.name} retirée du deck : les suggestions sont renotées.`);
     return;
   }
 
   if (act === 'buy') {
+    if (b.closest('.sugT')) geleSuggestions();
     buyCard(b.dataset.name);
+    return;
+  }
+
+  /* Cocher ou décocher un commandant secondaire, dans l'onglet EDHREC. Les
+     statistiques déjà chargées d'un commandant qu'on écarte quittent l'état
+     sur-le-champ : les laisser peser jusqu'au prochain aller-retour ferait
+     mentir la case. Celles d'un commandant qu'on rétablit manquent, et
+     l'empreinte remise à zéro les fait redemander au rendu qui suit. */
+  if (act === 'cmdSecondaire') {
+    const nom = b.dataset.name;
+    if (!nom) return;
+    const ecarte = !S.secondairesOff.has(nom);
+    if (ecarte) S.secondairesOff.add(nom); else S.secondairesOff.delete(nom);
+    S.edhrec.secondaires = (S.edhrec.secondaires || []).filter(x => !S.secondairesOff.has(x.commandant));
+    /* Écarter ne demande rien : les statistiques des autres restent en place,
+       et l'empreinte est remise au niveau de la nouvelle liste. Rétablir, au
+       contraire, laisse l'empreinte périmée — le rendu qui suit redemande la
+       page manquante, servie par le cache si elle a déjà été lue. */
+    S.edhrec.cmdSignature = ecarte ? signatureCommandants() : null;
+    scheduleSave();
+    apresReglage(`${nom} ${ecarte ? "n'est plus traitée comme commandant" : 'est traitée comme commandant'} : les statistiques EDHREC et les suggestions sont reprises.`);
+    return;
+  }
+
+  if (act === 'reclasser') {
+    /* Les scores sont déjà à jour : seul l'ordre affiché change, et le rendu
+       est immédiat. Le défilement n'est pas rattrapé — c'est un nouveau
+       classement qui a été demandé. */
+    degeleSuggestions();
+    renderSuggestions();
     return;
   }
 
@@ -228,19 +376,19 @@ document.addEventListener('click', ev => {
     const n = b.dataset.name;
     S.collection.set(n, (S.collection.get(n) || 0) + 1);
     toast(`${n} : 1 exemplaire ajouté à la collection.`);
-    renderAll();
+    recalculerAvecProgression(`${n} : un exemplaire de plus en collection, les suggestions en tiennent compte.`);
     return;
   }
 
   if (act === 'setCmd') {
     S.commander = b.dataset.name;
-    renderAll();
+    recalculerAvecProgression(`${b.dataset.name} désignée commandant : tout le classement des suggestions en dépend.`);
     return;
   }
 
   if (act === 'unsetCmd') {
     S.commander = null;
-    renderAll();
+    recalculerAvecProgression('Commandant retiré : le classement des suggestions est repris sans lui.');
     return;
   }
 
@@ -250,14 +398,24 @@ document.addEventListener('click', ev => {
       S.colors = new Set(cmd.identity.length ? cmd.identity : ['C']);
       S.colorMode = 'identity';
       invaliderCandidats();
-      renderAll();
+      recalculerAvecProgression(`Filtres alignés sur l'identité de ${cmd.name} : les candidates sont rebâties.`);
       toast(`Filtres alignés sur l'identité de ${cmd.name} : ${[...S.colors].join('')||'C'}.`);
     }
     return;
   }
 
   if (act === 'fiche') {
+    /* Le fil de lecture part de l'endroit d'où l'on ouvre la fiche : la
+       section qui porte le bouton, dans l'ordre où elle affiche ses cartes. */
+    poseParcoursFiche(b, b.dataset.name);
     openCardModal(b.dataset.name);
+    return;
+  }
+
+  /* Les deux boutons de l'entête d'une fiche : la carte précédente, la
+     suivante, dans la liste qu'on parcourait. */
+  if (act === 'ficheNav') {
+    ficheVoisine(parseInt(b.dataset.pas, 10) || 0);
     return;
   }
 
@@ -266,11 +424,6 @@ document.addEventListener('click', ev => {
     if (RETOURNEES.has(n)) RETOURNEES.delete(n); else RETOURNEES.add(n);
     if (document.getElementById('dlg') && document.getElementById('dlg').open) openCardModal(n);
     majApercu();
-    return;
-  }
-
-  if (act === 'saveDialog') {
-    openSaveDialog();
     return;
   }
 
@@ -299,6 +452,7 @@ document.addEventListener('click', ev => {
       idbVider();
       S.collection.clear();
       S.deck.clear();
+      CLES_ANNEXES.forEach(cle => annexeListe(cle).clear());
       S.commander = null;
       saveState = storageOK ? 'ok' : 'off';
       saveError = '';
@@ -332,7 +486,7 @@ document.addEventListener('click', ev => {
     S.majIgnoree = CAT.majDispo;
     scheduleSave();
     closeDialog();
-    toast("Mise à jour reportée : elle reste accessible depuis la pastille de sauvegarde.");
+    toast("Mise à jour reportée : elle reste accessible dans les paramètres (l'engrenage de l'entête).");
     return;
   }
 
@@ -343,7 +497,7 @@ document.addEventListener('click', ev => {
       CAT.octets = 0;
       CAT.date = null;
       invaliderCandidats();
-      renderAll();
+      recalculerAvecProgression('Archive effacée : les suggestions se limitent de nouveau à votre collection.');
       rafraichirFenetreSauvegarde();
       toast("Archive du catalogue effacée.");
     });
@@ -389,14 +543,14 @@ document.addEventListener('click', ev => {
 
   if (act === 'clearDeck') {
     openDialog('Vider le deck',
-      '<p class="small">Cette action retire toutes les cartes du deck. La collection est conservée.</p>',
+      '<p class="small">Cette action retire toutes les cartes de la liste principale. La collection, la réserve et les cartes à l\'étude sont conservées — chaque liste annexe a son propre bouton « Vider ».</p>',
       '<button class="btn" value="cancel" onclick="closeDialog()">Annuler</button><button class="btn danger" id="okClear" value="ok">Vider</button>');
     const okClear = document.getElementById('okClear');
     if (okClear) okClear.onclick = () => {
       S.deck.clear();
       S.commander = null;
       closeDialog();
-      renderAll();
+      recalculerAvecProgression('Liste principale vidée : les suggestions repartent d\'un deck vide.');
       toast('Deck vidé.');
     };
     return;
@@ -404,17 +558,6 @@ document.addEventListener('click', ev => {
 
   if (act === 'exportDeck') {
     exportDeckModal();
-    return;
-  }
-
-  if (act === 'toggleImages') {
-    S.images = !S.images;
-    // Nouvelle tentative d'accès à Scryfall : l'échec précédent portait
-    // peut-être sur l'autre mode d'affichage.
-    S.scryHS = false;
-    S.imagesFailed = false;
-    b.setAttribute('aria-pressed', String(S.images));
-    renderAll();
     return;
   }
 
@@ -429,7 +572,7 @@ document.addEventListener('click', ev => {
     S.focusNodes.clear();
     invaliderCandidats();
     renderD();
-    renderF();
+    renderSuggestions();
     renderTop();
     return;
   }
@@ -438,7 +581,7 @@ document.addEventListener('click', ev => {
     S.focusNodes.delete(b.dataset.node2);
     invaliderCandidats();
     renderD();
-    renderF();
+    renderSuggestions();
     renderTop();
     return;
   }
@@ -449,18 +592,24 @@ document.addEventListener('click', ev => {
       S.focusNodes.clear();
       S.focusNodes.add(n);
       closeDialog();
-      document.getElementById('secD').scrollIntoView({behavior:'smooth'});
       invaliderCandidats();
       renderD();
-      renderF();
+      renderSuggestions();
       renderTop();
+      /* La fiche a pu être ouverte depuis n'importe quel onglet : celui du
+         graphe s'ouvre d'abord, et le défilement ne part qu'une fois la
+         section redessinée, à sa hauteur définitive. */
+      allerVersSection('secD');
     }
     return;
   }
 
-  if (act === 'graphToF') {
-    const secF = document.getElementById('secF');
-    if (secF) secF.scrollIntoView({behavior:'smooth'});
+  /* Un renvoi d'une section à une autre : le bouton nomme la section, et
+     l'onglet qui la porte s'ouvre au passage (`allerVersSection`, js/entete.js).
+     Le graphe s'en sert pour mener aux pistes qu'il branche, sur sa propre
+     page, ou au classement complet dans l'onglet Catalogue. */
+  if (act === 'allerSection') {
+    allerVersSection(b.dataset.sec || 'secF');
     return;
   }
 
@@ -497,7 +646,7 @@ document.addEventListener('click', ev => {
   const tile = b.closest('[data-card]');
   if (tile) {
     const nom = tile.dataset.card;
-    if (nom) openCardModal(nom);
+    if (nom) { poseParcoursFiche(tile, nom); openCardModal(nom); }
     return;
   }
 });
@@ -526,10 +675,16 @@ document.addEventListener('input', ev => {
     majListeArchetypes();
     return;
   }
+  if (t.dataset.setq !== undefined) {
+    setRecherche = t.value;
+    majListeSets();
+    return;
+  }
   if (t.dataset.filtre) {
-    majFiltre(t.dataset.filtre, t.value);
+    /* La frappe va au brouillon : rien n'est appliqué avant « Appliquer ».
+       Seul le décompte de la fenêtre suit, il ne coûte que la collection. */
+    modifieBrouillon(() => majFiltre(t.dataset.filtre, t.value));
     majResumeFiltres();
-    planifierRenduFiltres();
     return;
   }
   if (t.dataset.recherche) {
@@ -538,7 +693,12 @@ document.addEventListener('input', ev => {
   }
   if (t.dataset.cst || t.dataset.cust) {
     const k = t.dataset.cst || t.dataset.cust;
-    S.custom[k] = t.type === 'checkbox' ? t.checked : (t.type === 'number' ? (parseInt(t.value, 10) || 0) : t.value);
+    modifieBrouillon(() => {
+      S.custom[k] = t.type === 'checkbox' ? t.checked : (t.type === 'number' ? (parseInt(t.value, 10) || 0) : t.value);
+    });
+    /* Seul le résumé bouge : réécrire la fenêtre volerait le curseur du
+       champ qu'on est en train de régler. */
+    if (brouillon) { majResumeFormat(); return; }
     renderAll();
     majResumeFormat();
     return;
@@ -546,13 +706,30 @@ document.addEventListener('input', ev => {
   if (t.dataset.clim || t.dataset.lim) {
     const c = t.dataset.clim || t.dataset.lim;
     const s = t.dataset.k || t.dataset.side;
-    S.custom.colorLimits[c][s] = parseInt(t.value, 10) || 0;
+    modifieBrouillon(() => { S.custom.colorLimits[c][s] = parseInt(t.value, 10) || 0; });
+    if (brouillon) return;
     renderE();
+    return;
+  }
+  if (t.dataset.cand !== undefined) {
+    /* Le plafond des candidats : il ne borne que le catalogue local, jamais
+       le chargement paginé par l'API (`S.exploreMax`). */
+    modifieBrouillon(() => { S.candidatsMax = Math.max(100, parseInt(t.value, 10) || 0); });
+    /* Réécrire la fenêtre volerait le curseur du champ qu'on règle. */
+    if (brouillon) return;
+    invaliderCandidats();
+    refreshSuggestions();
     return;
   }
   if (t.dataset.bud) {
     const k = t.dataset.bud;
-    S.budget[k] = t.type === 'number' ? (parseFloat(t.value) || 0) : t.value;
+    modifieBrouillon(() => {
+      S.budget[k] = t.type === 'number' ? (parseFloat(t.value) || 0) : t.value;
+    });
+    /* Dans la fenêtre « Budget », rien n'est appliqué avant le bouton :
+       seul le résumé suit, réécrire le corps volerait le curseur du champ
+       qu'on est en train de régler. */
+    if (brouillon) { majResumeBudget(); return; }
     if (k === 'perCard' || k === 'total') invaliderCandidats();
     refreshSuggestions();
     return;
@@ -561,17 +738,43 @@ document.addEventListener('input', ev => {
 
 document.addEventListener('change', ev => {
   const t = ev.target;
-  if (t.dataset.act === 'sort') {
-    S.sort = t.value;
-    renderB();
+  if (t.dataset.act === 'catNumeriques') {
+    modifieBrouillon(() => { S.catalogueNumeriques = !!t.checked; });
+    apresReglage('Réglage des cartes numériques modifié : les candidates sont rebâties.');
+    return;
+  }
+  if (t.dataset.act === 'filtreLegal') {
+    modifieBrouillon(() => { S.filtreLegal = !!t.checked; });
+    apresReglage('Filtre de légalité modifié : les cartes retenues et les suggestions sont recalculées.');
+    return;
+  }
+  /* Le rangement d'une section : chacune garde le sien, et seule celle qu'on
+     règle est redessinée. Le tri par score de la collection peut demander une
+     notation : `renderB` s'en charge par `filtered()`, et la mémorise. */
+  /* Le nombre de colonnes d'une grille : rien n'est recalculé, la liste est
+     simplement redessinée — c'est une mise en page, non une sélection. */
+  if (t.dataset.colonnes) {
+    const liste = t.dataset.colonnes, n = parseInt(t.value, 10);
+    S.colonnes[liste] = COLONNES.indexOf(n) >= 0 ? n : 0;
+    if (liste === 'collection') renderB(); else refreshSuggestions();
+    scheduleSave();
+    return;
+  }
+  if (t.dataset.groupe || t.dataset.tri) {
+    const section = t.dataset.groupe || t.dataset.tri;
+    (t.dataset.groupe ? S.groupes : S.tris)[section] = t.value;
+    if (section === 'collection') { S.limitB = PAGE; renderB(); }
+    else if (section === 'deck') renderE();
+    else refreshSuggestions();
+    scheduleSave();
     return;
   }
   if (t.dataset.act === 'format') {
-    S.format = t.value;
-    if (S.format === 'perso') S.custom.commander = fmt().commander;
-    invaliderCandidats();
-    renderAll();
-    majFenetreFormat();
+    modifieBrouillon(() => {
+      S.format = t.value;
+      if (S.format === 'perso') S.custom.commander = fmt().commander;
+    });
+    apresReglage('Format changé : légalité, taille et suggestions sont repris.');
     return;
   }
   if (t.dataset.act === 'chooseCmd') {
@@ -589,7 +792,13 @@ const dlgEl = document.getElementById('dlg');
 if (dlgEl) {
   /* Une fenêtre de filtres fermée autrement que par « Appliquer » revient
      à l'état d'avant son ouverture, quel qu'ait été le geste. */
-  dlgEl.addEventListener('close', () => fermetureFiltres());
+  dlgEl.addEventListener('close', () => {
+    fermetureBrouillon();
+    /* Le toast a pu être glissé dans la fenêtre pour passer au-dessus
+       d'elle : refermée, elle l'emporterait hors de vue. */
+    const t = document.getElementById('toast');
+    if (t && t.parentElement === dlgEl) document.body.appendChild(t);
+  });
   dlgEl.addEventListener('click', ev => {
     if (ev.target === dlgEl) {
       const rect = dlgEl.getBoundingClientRect();
@@ -604,11 +813,55 @@ if (dlgEl) {
   });
 }
 
+/* L'entête s'enroule autrement selon la largeur : sa hauteur est relevée à
+   nouveau, sans rien redessiner, pour que les sections gardent la bonne marge
+   de défilement. */
+window.addEventListener('resize', majHauteurEntete);
+
 // Clavier : Échap ferme la modale et l'aperçu
 document.addEventListener('keydown', ev => {
   if (ev.key === 'Escape') {
     cacherApercu();
     closeDialog();
+  }
+  /* Entrée dans un champ de filtre vaut « Appliquer » : la saisie ne
+     s'appliquant plus d'elle-même, il faut un geste au clavier. */
+  if (ev.key === 'Enter' && ev.target && ev.target.dataset && ev.target.dataset.filtre) {
+    ev.preventDefault();
+    appliquerFiltres();
+  }
+  /* Et de même dans la fenêtre « Budget », dont les deux champs chiffrés
+     attendent aussi « Appliquer ». */
+  if (ev.key === 'Enter' && ev.target && ev.target.dataset && ev.target.dataset.bud) {
+    ev.preventDefault();
+    appliquerBudget();
+  }
+  /* Les flèches, une fiche ouverte : la carte précédente, la suivante — les
+     mêmes que les deux boutons de son entête. Un champ de saisie garde ses
+     flèches, et la barre d'onglets les siennes : la fiche est modale, elle
+     n'a pas le focus en même temps qu'eux. */
+  const dlgFiche = document.getElementById('dlg');
+  if (dlgFiche && dlgFiche.open && dlgFiche.querySelector('.fiche[data-fiche]')
+      && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')
+      && !(ev.target && ev.target.closest && ev.target.closest('input, textarea, select'))) {
+    ev.preventDefault();
+    ficheVoisine(ev.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
+
+  /* La barre d'onglets au clavier, selon le motif « tablist » : les flèches
+     parcourent les onglets, Origine et Fin vont aux extrémités, et la page
+     suit le focus. La tabulation, elle, n'entre qu'une fois dans la barre. */
+  const ongletFocus = ev.target && ev.target.closest && ev.target.closest('#onglets [data-onglet]');
+  if (ongletFocus && ['ArrowLeft','ArrowRight','Home','End'].includes(ev.key)) {
+    ev.preventDefault();
+    const boutons = [...document.querySelectorAll('#onglets [data-onglet]')];
+    const i = boutons.indexOf(ongletFocus);
+    const j = ev.key === 'Home' ? 0
+      : ev.key === 'End' ? boutons.length - 1
+      : (i + (ev.key === 'ArrowRight' ? 1 : -1) + boutons.length) % boutons.length;
+    activerOnglet(boutons[j].dataset.onglet);
+    boutons[j].focus();
   }
 });
 
@@ -628,6 +881,15 @@ function demarrer() {
   reprendreArchetypesEdhrec().then(trouve => {
     if (trouve) renderAll();
     if (archetypesARevoir()) chargerArchetypesEdhrec();
+  });
+  /* Les sets déjà connus reviennent du cache : un set coché avant le
+     rechargement filtre de nouveau sans attendre Scryfall. */
+  reprendreSets().then(trouve => { if (trouve) renderAll(); });
+  /* Les Game Changers du Commander : la liste revient du cache, et n'est
+     redemandée à Scryfall qu'une fois la semaine passée. */
+  reprendreGameChangers().then(trouve => {
+    if (trouve) renderAll();
+    if (gameChangersARevoir()) chargerGameChangers();
   });
   demarrerCatalogue();
 }

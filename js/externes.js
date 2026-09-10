@@ -142,7 +142,10 @@ function edhrecAllFor(card) {
   }
 
   // 3. Commandants secondaires du deck non encore dans S.edhrec.secondaires mais dans EDHREC_CACHE
-  const secDeckCards = commandantsPossibles ? commandantsPossibles().filter(c => !cmdPrincipal || norm(c.name) !== norm(cmdPrincipal)) : [];
+  /* Les secondaires retenus, non toutes les légendaires du deck : une carte
+     décochée dans l'onglet EDHREC ne doit plus rien apporter, fût-ce depuis le
+     cache d'une visite précédente. */
+  const secDeckCards = typeof commandantsSecondaires === 'function' ? commandantsSecondaires() : [];
   secDeckCards.forEach(sc => {
     const cmdKey = norm(sc.name);
     if (seenCmds.has(cmdKey)) return;
@@ -160,14 +163,25 @@ function edhrecAllFor(card) {
   return list;
 }
 
+/* Les commandants que l'atelier croise avec EDHREC, en une chaîne : le
+   principal et les secondaires retenus. Elle dit quand les statistiques en
+   place ne valent plus — un commandant désigné, une légendaire ajoutée au
+   deck, une case décochée dans l'onglet EDHREC. Définie une fois : le
+   chargement, le rendu et la case s'y réfèrent tous les trois, et deux
+   formules jumelles finiraient par diverger. */
+function signatureCommandants() {
+  const cmd = S.commander ? find(S.commander) : null;
+  return (cmd ? cmd.name : '') + '::' + commandantsSecondaires().map(c => c.name).sort().join('|');
+}
+
 async function loadEdhrec(force) {
   const cmd = S.commander ? find(S.commander) : null;
   const secCmds = commandantsSecondaires();
   if (!cmd && !secCmds.length) {
-    toast("Désignez un commandant en section D ou ajoutez des créatures légendaires au deck.");
+    toast("Désignez un commandant dans l'onglet Deck ou ajoutez des créatures légendaires au deck.");
     return;
   }
-  const cmdSig = (cmd ? cmd.name : '') + '::' + secCmds.map(c => c.name).sort().join('|');
+  const cmdSig = signatureCommandants();
   if (!force && S.edhrec.cmdSignature === cmdSig && S.edhrec.status !== 'idle' && S.edhrec.status !== 'error') {
     return;
   }
@@ -177,7 +191,7 @@ async function loadEdhrec(force) {
   S.edhrec.status = 'loading';
   S.edhrec.secStatus = secCmds.length ? 'loading' : 'idle';
   S.edhrec.cmdSignature = cmdSig;
-  renderF();
+  renderSuggestions();
 
   try {
     const promises = [];
@@ -216,7 +230,7 @@ async function loadEdhrec(force) {
     S.edhrec.status = 'error';
     S.edhrec.error = err.message || 'requête refusée';
   }
-  renderF();
+  renderSuggestions();
 }
 
 /* 1 bis. Archétypes établis : thèmes EDHREC
@@ -461,7 +475,7 @@ async function chargerThemeEdhrec(slug) {
   } finally {
     ARCH_BASE.enCours.delete(slug);
     if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
-    if (typeof renderAll === 'function') renderAll();
+    if (typeof renderAllSiApplique === 'function') renderAllSiApplique();
   }
 }
 
@@ -523,6 +537,234 @@ async function chargerArchetypesEdhrec() {
       : 'EDHREC injoignable depuis ce navigateur (hors ligne, CORS ou accès bloqué)';
   }
   if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
+  if (typeof renderAllSiApplique === 'function') renderAllSiApplique();
+}
+
+/* 1 ter. Sets publiés par Scryfall
+   La liste des sets tient en une requête ; la composition d'un set n'est
+   cherchée qu'au moment où on le coche. Les noms retenus alimentent
+   `SETS_BASE` (js/etat.js) et sont conservés dans IndexedDB, exactement
+   comme les thèmes EDHREC au-dessus. */
+
+const SETS_CLE_IDB = 'sets';
+const SETS_FRAICHEUR = 7 * 24 * 3600e3;   // la liste ne bouge que de quelques sets par an
+const SETS_PAGES = 12;                    // 175 cartes par page : de quoi couvrir même les Secret Lair
+const SETS_PAUSE = 120;                   // ms entre deux pages, par courtoisie envers Scryfall
+
+/* Sets proposés : ceux qu'on peut avoir en main. Les éditions numériques
+   sont écartées — comme pour le défilement des illustrations, qui cherche
+   déjà sur `game:paper` — et avec elles les planches de jetons et les
+   objets de collection, qui ne se jouent pas. */
+const SETS_ECARTES = new Set(['token', 'memorabilia', 'minigame']);
+
+function setRetenu(s) {
+  if (!s || SETS_ECARTES.has(s.set_type)) return false;
+  return S.catalogueNumeriques || !s.digital;
+}
+
+/* Reprise du cache local, au démarrage : sans elle, un set coché avant le
+   rechargement ne filtrerait plus rien tant que Scryfall n'a pas répondu. */
+async function reprendreSets() {
+  try {
+    const memo = await idbLire(SETS_CLE_IDB);
+    if (!memo || memo.v !== 1) return false;
+    SETS_BASE.index = indexDepuisCartes(memo.cartes || {});
+    SETS_BASE.charges = memo.charges || {};
+    SETS_BASE.liste = memo.liste || [];
+    SETS_BASE.maj = memo.maj || null;
+    SETS_BASE.numeriques = !!memo.numeriques;
+    SETS_BASE.etat = SETS_BASE.liste.length ? 'ok' : 'idle';
+    return SETS_BASE.liste.length > 0 || SETS_BASE.index.size > 0;
+  } catch(err) {
+    return false;
+  }
+}
+
+function sauverSets() {
+  idbEcrire(SETS_CLE_IDB, {
+    v:1, maj:SETS_BASE.maj, liste:SETS_BASE.liste, charges:SETS_BASE.charges,
+    numeriques: !!S.catalogueNumeriques,
+    cartes:cartesDepuisIndex(SETS_BASE.index)
+  }).catch(() => {});
+}
+
+/* Y a-t-il lieu d'interroger Scryfall ? Oui si nous n'avons rien, ou si
+   notre liste a passé la semaine. */
+function setsARevoir() {
+  /* Basculer l'autorisation des cartes numériques périme la liste : elle a
+     été bâtie sous l'autre réglage, et son cache la resservirait telle quelle. */
+  if (!!SETS_BASE.numeriques !== !!S.catalogueNumeriques) return true;
+  return !SETS_BASE.liste.length || !SETS_BASE.maj || Date.now() - SETS_BASE.maj > SETS_FRAICHEUR;
+}
+
+/* Les cartes déjà relevées d'un set l'ont été sous un réglage donné : changer
+   d'avis sur le numérique les rend caduques, il faut les redemander. */
+function oublieCartesSets() {
+  SETS_BASE.charges = {};
+  SETS_BASE.index = new Map();
+}
+
+/* La liste des sets : une requête, quelques centaines d'entrées. */
+async function chargerListeSets() {
+  if (SETS_BASE.etat === 'chargement') return;
+  if (typeof fetch !== 'function') {
+    SETS_BASE.etat = 'erreur';
+    SETS_BASE.erreur = 'ce navigateur ne sait pas interroger Scryfall';
+    return;
+  }
+  if (!SETS_BASE.liste.length) await reprendreSets();
+  if (!setsARevoir()) { SETS_BASE.etat = 'ok'; return; }
+  SETS_BASE.etat = 'chargement';
+  SETS_BASE.erreur = '';
+  if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
+  try {
+    const r = await fetch('https://api.scryfall.com/sets');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const liste = (j.data || []).filter(setRetenu).map(x => ({
+      code: String(x.code || '').toUpperCase(),
+      nom: x.name || x.code || '',
+      sortie: x.released_at || '',
+      type: x.set_type || '',
+      n: x.card_count || 0
+    })).filter(x => x.code);
+    if (liste.length) {
+      if (!!SETS_BASE.numeriques !== !!S.catalogueNumeriques) oublieCartesSets();
+      SETS_BASE.liste = liste;
+      SETS_BASE.maj = Date.now();
+      SETS_BASE.numeriques = !!S.catalogueNumeriques;
+      sauverSets();
+    }
+    SETS_BASE.etat = 'ok';
+  } catch(err) {
+    /* Une liste déjà en cache vaut mieux qu'un message d'erreur. */
+    SETS_BASE.etat = SETS_BASE.liste.length ? 'ok' : 'erreur';
+    SETS_BASE.erreur = err.message || 'échec réseau';
+  }
+  if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
+}
+
+function noteSetIndex(nom, code) {
+  const n = norm(nom);
+  if (!n) return;
+  const s = SETS_BASE.index.get(n) || new Set();
+  s.add(code);
+  SETS_BASE.index.set(n, s);
+}
+
+/* Les cartes d'un set, à sa première utilisation. Seuls les noms sont
+   retenus : c'est tout ce dont le filtre a besoin. Le nom de la face avant
+   est indexé en plus du nom complet, pour que les recto-verso répondent
+   quelle que soit la forme sous laquelle la collection les porte. */
+async function chargerSetScryfall(code) {
+  const c = String(code || '').toUpperCase();
+  if (!c || SETS_BASE.charges[c] || SETS_BASE.enCours.has(c)) return;
+  if (typeof fetch !== 'function') return;
+  SETS_BASE.enCours.add(c);
+  if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
+  const noms = new Set();
+  let url = 'https://api.scryfall.com/cards/search?unique=cards&order=name&q='
+          + encodeURIComponent('set:' + c.toLowerCase() + (S.catalogueNumeriques ? '' : ' game:paper'));
+  try {
+    for (let page = 0; page < SETS_PAGES && url; page++) {
+      const r = await fetch(url);
+      if (r.status === 404) break;   // set sans carte papier : liste vide, pas une panne
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      (j.data || []).forEach(sc => { if (sc && sc.name) noms.add(sc.name); });
+      url = j.has_more ? j.next_page : '';
+      if (url) await new Promise(res => setTimeout(res, SETS_PAUSE));
+    }
+    noms.forEach(nom => {
+      noteSetIndex(nom, c);
+      const avant = typeof frontFace === 'function' ? frontFace(nom) : nom;
+      if (avant && avant !== nom) noteSetIndex(avant, c);
+    });
+    SETS_BASE.charges[c] = {n:noms.size};
+    SETS_BASE.maj = SETS_BASE.maj || Date.now();
+    sauverSets();
+  } catch(err) {
+    SETS_BASE.charges[c] = {n:0, erreur:err.message || 'échec'};
+  } finally {
+    SETS_BASE.enCours.delete(c);
+  }
+  if (typeof majFenetreFiltres === 'function') majFenetreFiltres();
+  if (typeof majResumeFiltres === 'function') majResumeFiltres();
+  if (typeof renderAllSiApplique === 'function') renderAllSiApplique();
+}
+
+/* 1 quater. Game Changers
+   La liste que Wizards publie pour les paliers du Commander, telle que
+   Scryfall la marque (`is:gamechanger`). Une quarantaine de cartes, une
+   requête, gardée en cache une semaine dans IndexedDB comme la liste des
+   sets — et relue au démarrage, sans quoi un atelier hors ligne ne saurait
+   plus rien en dire. */
+
+const GC_CLE_IDB = 'gamechangers';
+const GC_FRAICHEUR = 7 * 24 * 3600e3;   // l'éditeur ne révise sa liste que rarement
+const GC_PAGES = 3;                     // 175 cartes par page : la liste en tient dans une
+
+async function reprendreGameChangers() {
+  try {
+    const memo = await idbLire(GC_CLE_IDB);
+    if (!memo || memo.v !== 1 || !Array.isArray(memo.noms)) return false;
+    GC_BASE.noms = new Set(memo.noms);
+    GC_BASE.maj = memo.maj || null;
+    GC_BASE.etat = GC_BASE.noms.size ? 'ok' : 'idle';
+    return GC_BASE.noms.size > 0;
+  } catch(err) {
+    return false;
+  }
+}
+
+function sauverGameChangers() {
+  idbEcrire(GC_CLE_IDB, {v:1, maj:GC_BASE.maj, noms:[...GC_BASE.noms]}).catch(() => {});
+}
+
+function gameChangersARevoir() {
+  return !GC_BASE.noms.size || !GC_BASE.maj || Date.now() - GC_BASE.maj > GC_FRAICHEUR;
+}
+
+async function chargerGameChangers() {
+  if (GC_BASE.etat === 'chargement') return;
+  if (typeof fetch !== 'function') {
+    GC_BASE.etat = 'erreur';
+    GC_BASE.erreur = 'ce navigateur ne sait pas interroger Scryfall';
+    return;
+  }
+  if (!GC_BASE.noms.size) await reprendreGameChangers();
+  if (!gameChangersARevoir()) { GC_BASE.etat = 'ok'; return; }
+  GC_BASE.etat = 'chargement';
+  GC_BASE.erreur = '';
+  try {
+    const noms = new Set();
+    let url = 'https://api.scryfall.com/cards/search?q=' + encodeURIComponent('is:gamechanger') + '&unique=cards';
+    for (let page = 0; page < GC_PAGES && url; page++) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      (j.data || []).forEach(sc => {
+        const nom = sc && sc.name;
+        if (!nom) return;
+        /* Les deux faces d'une carte recto-verso : la liste porte le nom
+           complet, l'atelier connaît parfois la seule face avant. */
+        noms.add(norm(nom));
+        noms.add(norm(frontFace(nom)));
+      });
+      url = j.has_more && j.next_page ? j.next_page : '';
+      if (url) await new Promise(r2 => setTimeout(r2, SETS_PAUSE));
+    }
+    if (noms.size) {
+      GC_BASE.noms = noms;
+      GC_BASE.maj = Date.now();
+      sauverGameChangers();
+    }
+    GC_BASE.etat = 'ok';
+  } catch(err) {
+    /* Une liste déjà en cache vaut mieux qu'un message d'erreur. */
+    GC_BASE.etat = GC_BASE.noms.size ? 'ok' : 'erreur';
+    GC_BASE.erreur = err.message || 'échec réseau';
+  }
   if (typeof renderAll === 'function') renderAll();
 }
 
@@ -610,7 +852,7 @@ async function loadCombos(force) {
     S.csb = {sig, status:cors ? 'cors' : 'error', data:null, error:err.message || 'requête refusée'};
   }
   renderE();
-  renderF();
+  renderSuggestions();
 }
 
 function combosDe(card) {
@@ -690,9 +932,13 @@ function compacte(sc) {
     (pw != null && /^\d+$/.test(String(pw))) ? +pw : null,
     parseFloat((sc.prices && (sc.prices.eur || sc.prices.usd)) || 0) || 0,
     sc.id || '', (typeof sc.edhrec_rank === 'number') ? sc.edhrec_rank : 999999,
-    (lg.commander === 'legal' ? 'c' : '') + (lg.standard === 'legal' ? 's' : ''), chemin, verso,
+    codeLegalite(lg) || '', chemin, verso,
     (tg != null && /^\d+$/.test(String(tg))) ? +tg : null,
-    sc.artist || (faces && faces[0] && faces[0].artist) || ''
+    sc.artist || (faces && faces[0] && faces[0].artist) || '',
+    String(sc.set || '').toUpperCase(),
+    /* Carte qui n'existe que sous forme numérique : Alchemy, rééquilibrages
+       Arena, exclusivités MTGO. On ne peut pas les posséder sur papier. */
+    (sc.digital || (Array.isArray(sc.games) && !sc.games.includes('paper'))) ? 1 : 0
   ];
 }
 
@@ -717,7 +963,41 @@ function estGzip(nom, octets) {
   return !!(octets && octets[0] === 0x1f && octets[1] === 0x8b);
 }
 
-async function fluxTexte(source, nom) {
+/* Compte les octets qui passent, sans rien retenir : c'est ce qui permet
+   d'annoncer un vrai pourcentage sans garder l'archive en mémoire. */
+function compteurOctets(onOctets) {
+  let n = 0;
+  return new TransformStream({
+    transform(bloc, ctrl) {
+      n += (bloc && (bloc.byteLength || bloc.length)) || 0;
+      onOctets(n);
+      ctrl.enqueue(bloc);
+    }
+  });
+}
+
+/* L'avancement d'un chargement d'archive, tel que la boîte de progression le
+   lit. Les totaux viennent de `verifierMajCatalogue()` — Scryfall publie la
+   taille compressée et la taille brute — ou de la taille du fichier choisi ;
+   quand ils manquent, la barre affiche un compte sans pourcentage. */
+function nouveauSuivi(source, totalRecu, totalExtrait) {
+  let dernier = 0;
+  return {
+    source, recu:0, extrait:0, cartes:0, phase:'telechargement',
+    totalRecu: totalRecu || 0, totalExtrait: totalExtrait || 0,
+    abandon: false,
+    /* Rafraîchir à chaque bloc serait du gaspillage : dix fois par seconde
+       suffit largement à l'œil. */
+    avance(force) {
+      const t = Date.now();
+      if (!force && t - dernier < 100) return;
+      dernier = t;
+      if (typeof majBoiteCatalogue === 'function') majBoiteCatalogue();
+    }
+  };
+}
+
+async function fluxTexte(source, nom, suivi) {
   let flux = source.stream ? source.stream() : source.body;
   let gz = /\.gz$/i.test(nom || '');
   if (!gz && source.slice) {
@@ -725,21 +1005,43 @@ async function fluxTexte(source, nom) {
     gz = estGzip(nom, tete);
     flux = source.stream();
   }
+  if (suivi) flux = flux.pipeThrough(compteurOctets(n => {
+    suivi.recu = n;
+    if (!gz) suivi.extrait = n;   // rien à décompresser : c'est le même flot
+    suivi.avance();
+  }));
   if (gz) {
     if (typeof DecompressionStream === 'undefined')
       throw new Error('ce navigateur ne sait pas décompresser le .gz ; fournissez le fichier décompressé');
     flux = flux.pipeThrough(new DecompressionStream('gzip'));
+    if (suivi) flux = flux.pipeThrough(compteurOctets(n => { suivi.extrait = n; suivi.avance(); }));
   }
   return flux.pipeThrough(new TextDecoderStream());
 }
 
+/* Réunit deux listes de codes d'édition, sans doublon. */
+function fusionneSets(a, b) {
+  if (!a) return b || '';
+  if (!b) return a;
+  const out = new Set(String(a).split(','));
+  String(b).split(',').forEach(c => { if (c) out.add(c); });
+  return [...out].filter(Boolean).join(',');
+}
+
+/* Les impressions d'une même carte se fondent en une seule ligne — la mieux
+   classée — mais leurs codes d'édition s'y accumulent. Une archive par
+   impressions (default-cards) donne ainsi la liste complète des sets d'une
+   carte, sans le moindre appel réseau ; oracle-cards, qui n'en publie qu'une
+   par carte, n'en donne qu'un, et Scryfall complète à la demande. */
 function retiens(par, rec) {
   const cle = norm(rec[CH.NOM]);
   const ancien = par.get(cle);
   if (!ancien) { par.set(cle, rec); return; }
+  const sets = fusionneSets(ancien[CH.SET], rec[CH.SET]);
   const mieux = (rec[CH.RANG] < ancien[CH.RANG]) ||
               (rec[CH.RANG] === ancien[CH.RANG] && rec[CH.PRIX] > 0 && ancien[CH.PRIX] <= 0);
   if (mieux) par.set(cle, rec);
+  par.get(cle)[CH.SET] = sets;
 }
 
 function tailleEstimee(cartes) {
@@ -750,13 +1052,29 @@ function tailleEstimee(cartes) {
   return Math.round(somme / n * cartes.length);
 }
 
-async function lireCatalogueFichier(source, nom) {
-  CAT.etat = 'chargement'; CAT.source = 'fichier'; CAT.detail = ''; CAT.partiel = false; renderF();
+/* Levée quand l'utilisateur interrompt : ce n'est pas une panne, et l'appelant
+   la distingue d'une erreur. */
+function ArchiveAbandonnee() { const e = new Error('chargement interrompu'); e.abandon = true; return e; }
+
+async function lireCatalogueFichier(source, nom, suivi) {
+  CAT.etat = 'chargement'; CAT.source = suivi && suivi.source === 'réseau' ? 'réseau' : 'fichier';
+  CAT.detail = ''; CAT.partiel = false; renderSuggestions();
   const par = new Map();
   const cartes = {get length(){ return par.size; }, push(rec){ retiens(par, rec); }};
   let impressions = 0, reste = '', tableau = null, lus = 0;
-  const lecteur = (await fluxTexte(source, nom)).getReader();
+  /* La lecture pose ses lots dans `CAT.cartes` au fur et à mesure, pour que
+     l'atelier montre déjà quelque chose. Renoncer doit donc rendre l'archive
+     telle qu'elle était, et non laisser une moitié de catalogue. */
+  const avant = CAT.cartes;
+  const lecteur = (await fluxTexte(source, nom, suivi)).getReader();
+  const renonce = async () => {
+    await lecteur.cancel().catch(() => {});
+    CAT.cartes = avant;
+    throw ArchiveAbandonnee();
+  };
+  if (suivi) { suivi.phase = 'extraction'; suivi.avance(true); }
   while (true) {
+    if (suivi && suivi.abandon) await renonce();
     const {done, value} = await lecteur.read();
     if (done) break;
     reste += value;
@@ -768,7 +1086,13 @@ async function lireCatalogueFichier(source, nom) {
       reste = reste.slice(i + 1);
       if (ligne.length < 2 || ligne === '[' || ligne === ']') continue;
       try { const c = compacte(JSON.parse(ligne)); if (c) { cartes.push(c); impressions++; } } catch(e) {}
-      if (++lus % 25000 === 0) { CAT.cartes = [...par.values()]; renderF(); await new Promise(r => setTimeout(r, 0)); }
+      if (++lus % 25000 === 0) {
+        CAT.cartes = [...par.values()];
+        if (suivi) { suivi.cartes = par.size; suivi.avance(true); }
+        renderSuggestions();
+        await new Promise(r => setTimeout(r, 0));
+        if (suivi && suivi.abandon) await renonce();
+      }
     }
   }
   if (tableau) {
@@ -785,12 +1109,12 @@ async function lireCatalogueFichier(source, nom) {
   CAT.maj = CAT.maj || null;
   appliqueCatalogueAuxCartes();
   CAT.octets = tailleEstimee(CAT.cartes);
-  CAT.source = 'fichier';
   CAT.impressions = impressions;
+  if (suivi) { suivi.phase = 'fini'; suivi.cartes = CAT.cartes.length; suivi.avance(true); }
   invaliderCandidats();
   if (saveState !== 'desactive' && S.catalogueActif)
-    idbEcrire('cartes', {v:2, cartes:CAT.cartes, maj:CAT.maj, date:CAT.date, octets:CAT.octets, impressions}).catch(() => {});
-  renderAll();
+    idbEcrire('cartes', {v:4, cartes:CAT.cartes, maj:CAT.maj, date:CAT.date, octets:CAT.octets, impressions}).catch(() => {});
+  recalculerAvecProgression(`L'archive Scryfall vient d'être chargée (${CAT.cartes.length.toLocaleString('fr-FR')} cartes) : les candidates sont bâties, puis notées.`);
   toast(`${CAT.cartes.length.toLocaleString('fr-FR')} cartes retenues${
     impressions > CAT.cartes.length ? ` sur ${impressions.toLocaleString('fr-FR')} impressions lues` : ''}.`);
   return true;
@@ -819,7 +1143,7 @@ async function verifierMajCatalogue() {
     CAT.uri = j.jsonl_download_uri || j.download_uri || '';
     CAT.taille = j.compressed_size || 0;
     CAT.tailleBrute = j.size || 0;
-    renderF();
+    renderSuggestions();
     return j;
   } catch(err) { return null; }
 }
@@ -833,7 +1157,8 @@ function catalogueObsolete() {
 async function majPrix(force) {
   if (typeof fetch !== 'function') return;
   if (!force && S.prixMaj && Date.now() - S.prixMaj < 20 * 3600e3) return;
-  const noms = [...new Set([...S.collection.keys(), ...S.deck.keys()])].filter(n => find(n));
+  const noms = [...new Set([...S.collection.keys(), ...S.deck.keys(),
+    ...CLES_ANNEXES.flatMap(cle => [...annexeListe(cle).keys()])])].filter(n => find(n));
   if (!noms.length) return;
   let maj = 0;
   for (let i = 0; i < noms.length; i += 75) {
@@ -863,40 +1188,75 @@ async function majPrix(force) {
 
 async function telechargerCatalogue() {
   if (typeof fetch !== 'function') { toast('Téléchargement impossible dans ce contexte.'); return false; }
-  CAT.etat = 'chargement'; CAT.source = 'réseau'; CAT.detail = ''; renderF();
+  /* Un chargement est déjà en cours : on montre sa boîte plutôt que d'en
+     lancer un second, qui se disputerait `CAT.cartes` avec le premier. */
+  if (CAT.suivi) {
+    if (typeof ouvrirBoiteCatalogue === 'function') ouvrirBoiteCatalogue();
+    return false;
+  }
+  CAT.etat = 'chargement'; CAT.source = 'réseau'; CAT.detail = ''; renderSuggestions();
   try {
     const info = await verifierMajCatalogue();
     const adresse = (info && (info.jsonl_download_uri || info.download_uri)) || CAT.uri;
     if (!adresse) throw new Error("adresse de téléchargement inconnue");
-    toast(`Téléchargement de l'archive${CAT.taille ? ` (${(CAT.taille/1048576).toFixed(0)} Mo)` : ''}…`);
-    const rep = await fetch(adresse);
+    CAT.ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const suivi = nouveauSuivi('réseau', CAT.taille, CAT.tailleBrute);
+    CAT.suivi = suivi;
+    if (typeof ouvrirBoiteCatalogue === 'function') ouvrirBoiteCatalogue();
+    const rep = await fetch(adresse, CAT.ctrl ? {signal:CAT.ctrl.signal} : undefined);
     if (!rep.ok) throw new Error('HTTP ' + rep.status);
+    /* Scryfall annonce la taille compressée, mais l'en-tête de la réponse
+       fait foi quand elle est là. */
+    const annonce = parseInt(rep.headers.get('content-length') || '0', 10);
+    if (annonce > 0) suivi.totalRecu = annonce;
     CAT.maj = (info && info.updated_at) || null;
-    await lireCatalogueFichier(rep, adresse);
+    await lireCatalogueFichier(rep, adresse, suivi);
     S.majIgnoree = null;
+    if (typeof fermerBoiteCatalogue === 'function') fermerBoiteCatalogue();
     rafraichirFenetreSauvegarde();
     return true;
   } catch(err) {
+    /* Une interruption voulue n'est pas une panne : l'archive déjà en place
+       n'a pas été touchée, `CAT.cartes` n'étant remplacé qu'en fin de lecture. */
+    if (err.abandon || err.name === 'AbortError' || (CAT.suivi && CAT.suivi.abandon)) {
+      CAT.etat = CAT.cartes.length ? 'ok' : '';
+      CAT.detail = '';
+      if (typeof fermerBoiteCatalogue === 'function') fermerBoiteCatalogue();
+      renderSuggestions();
+      rafraichirFenetreSauvegarde();
+      toast('Chargement de l\'archive interrompu.');
+      return false;
+    }
+    if (typeof fermerBoiteCatalogue === 'function') fermerBoiteCatalogue();
     const bloque = (err instanceof TypeError) || /Failed to fetch|NetworkError|Load failed/i.test(err.message || '');
     CAT.etat = bloque ? 'hors-ligne' : 'erreur';
     CAT.detail = bloque
       ? `le serveur de fichiers de Scryfall (data.scryfall.io) refuse la requête depuis une page tierce. Utilisez le bouton de téléchargement, puis chargez l'archive obtenue — sans la décompresser.`
       : `échec du téléchargement : ${err.message||'erreur inconnue'}`;
-    renderF();
+    renderSuggestions();
     rafraichirFenetreSauvegarde();
     toast(bloque ? "Téléchargement direct refusé par Scryfall : passez par le lien puis le chargement de fichier."
                  : `Échec : ${err.message||'erreur inconnue'}.`);
     return false;
+  } finally {
+    CAT.ctrl = null;
   }
+}
+
+/* Interrompt le chargement en cours : le drapeau arrête la boucle de lecture,
+   l'`AbortController` coupe le téléchargement lui-même. */
+function interrompreCatalogue() {
+  if (CAT.suivi) CAT.suivi.abandon = true;
+  if (CAT.ctrl) { try { CAT.ctrl.abort(); } catch(e) {} }
 }
 
 async function chargerCatalogueComplet(force) {
   if (CAT.etat === 'chargement' || typeof fetch !== 'function') return;
-  CAT.etat = 'chargement'; CAT.source = 'cache'; renderF();
+  CAT.etat = 'chargement'; CAT.source = 'cache'; renderSuggestions();
   try {
     if (!force) {
       const memo = await idbLire('cartes').catch(() => null);
-      if (memo && (memo.v === 1 || memo.v === 2) && Array.isArray(memo.cartes) && memo.cartes.length && Array.isArray(memo.cartes[0])) {
+      if (memo && memo.v >= 1 && memo.v <= 4 && Array.isArray(memo.cartes) && memo.cartes.length && Array.isArray(memo.cartes[0])) {
         CAT.cartes = memo.cartes;
         CAT.maj = memo.maj;
         CAT.etat = 'ok';
@@ -906,17 +1266,19 @@ async function chargerCatalogueComplet(force) {
         CAT.partiel = !!memo.partiel;
         CAT.impressions = memo.impressions || 0;
         appliqueCatalogueAuxCartes();
-        if (memo.v !== 2) CAT.detail = 'archive d\'une version antérieure : rechargez le fichier Scryfall pour obtenir les visuels des cartes.';
+        if (memo.v < 2) CAT.detail = 'archive d\'une version antérieure : rechargez le fichier Scryfall pour obtenir les visuels des cartes.';
+        else if (memo.v < 3) CAT.detail = 'archive d\'une version antérieure : rechargez le fichier Scryfall pour filtrer par set sans réseau.';
+        else if (memo.v < 4) CAT.detail = 'archive d\'une version antérieure : rechargez le fichier Scryfall pour distinguer les cartes numériques.';
         invaliderCandidats();
-        renderAll();
+        recalculerAvecProgression(`L'archive Scryfall a été relue depuis ce navigateur (${CAT.cartes.length.toLocaleString('fr-FR')} cartes) : les candidates sont bâties, puis notées.`);
         return;
       }
     }
-    CAT.etat = ''; renderF();
+    CAT.etat = ''; renderSuggestions();
     if (!force && await chargerCatalogueLocal()) return;
   } catch(err) {
     CAT.etat = (err instanceof TypeError) ? 'hors-ligne' : 'erreur';
-    renderF();
+    renderSuggestions();
     return;
   }
   /* Rien sur cet appareil : l'archive est téléchargée et extraite sans
@@ -935,6 +1297,9 @@ async function demarrerCatalogue() {
   await chargerCatalogueComplet();
   await verifierMajCatalogue();
   if (catalogueAbsent()) return;
+  /* Ne pas proposer par-dessus un chargement en cours : la fenêtre prendrait
+     la place de la boîte de progression. */
+  if (CAT.suivi) return;
   if (catalogueObsolete() && S.majIgnoree !== CAT.majDispo) proposerMajCatalogue();
 }
 
@@ -1001,7 +1366,23 @@ function completeDepuisRec(c, rec) {
   if (rec[CH.ENDURANCE] != null && c.endurance == null) c.endurance = rec[CH.ENDURANCE];
   if (rec[CH.ARTISTE] && !c.artist) c.artist = rec[CH.ARTISTE];
   if (!c.price && rec[CH.PRIX] > 0) c.price = rec[CH.PRIX];
+  noterSetsArchive(c, rec);
+  noterLegalArchive(c, rec);
   return c;
+}
+
+/* Ce que l'archive sait de la légalité d'une carte. L'archive n'en publie que
+   pour Commander et Standard : ailleurs, la carte reste « non jugée ». */
+function noterLegalArchive(c, rec) {
+  if (c && rec.length > CH.LEGAL) c.legal = String(rec[CH.LEGAL] || '');
+}
+
+/* Ce que l'archive sait des éditions d'une carte, gardé sur la carte pour que
+   le filtre par set réponde sans réseau. `setsCarte()` (js/etat.js) le réunit
+   à ce que Scryfall rapporte et aux éditions possédées. */
+function noterSetsArchive(c, rec) {
+  const codes = String(rec[CH.SET] || '').split(',').filter(Boolean);
+  if (c && codes.length) c.setsArchive = codes;
 }
 
 function carteDuCatalogue(rec) {
@@ -1015,6 +1396,7 @@ function carteDuCatalogue(rec) {
   if (rec[CH.FORCE] != null) c.force = rec[CH.FORCE];
   if (rec[CH.ENDURANCE] != null) c.endurance = rec[CH.ENDURANCE];
   if (rec[CH.ARTISTE]) c.artist = rec[CH.ARTISTE];
+  noterLegalArchive(c, rec);
   reanalyser(c);
   if (rec[CH.IMG]) {
     c.img = CDN + 'small/' + rec[CH.IMG];
@@ -1030,12 +1412,16 @@ function carteDuCatalogue(rec) {
   return c;
 }
 
-let CAND = {sig:null, liste:[]};
-function invaliderCandidats() { CAND = {sig:null, liste:[]}; }
+let CAND = {sig:null, liste:[], stats:null};
+function invaliderCandidats() { CAND = {sig:null, liste:[], stats:null}; }
 
+/* Les critères de la fenêtre entrent dans la signature : sans eux, le
+   décompte annoncé resservirait celui d'avant le filtre. */
 function signatureCandidats() {
   return [S.format, S.commander, [...S.colors].join(''), S.colorMode, S.budget.perCard,
-          CAT.cartes.length, S.collection.size, S.exploreMax, noeudsActifs().sort().join(',')].join('|');
+          CAT.cartes.length, S.collection.size, S.candidatsMax, S.filtreLegal,
+          S.catalogueNumeriques, noeudsActifs().sort().join(','),
+          JSON.stringify(S.filtres || {})].join('|');
 }
 
 /* Le catalogue local porte le texte oracle complet et les prix à jour : on en
@@ -1043,7 +1429,8 @@ function signatureCandidats() {
    intégrée et les prix des cartes possédées ou jouées. */
 function appliqueCatalogueAuxCartes() {
   if (!CAT.cartes.length) return;
-  const utiles = new Set([...S.collection.keys(), ...S.deck.keys()].map(norm));
+  const utiles = new Set([...S.collection.keys(), ...S.deck.keys(),
+    ...CLES_ANNEXES.flatMap(cle => [...annexeListe(cle).keys()])].map(norm));
   const aCompleter = new Map();
   DB.forEach(c => { if (!c.textFull && !c.unknown) aCompleter.set(norm(c.name), c); });
   if (!utiles.size && !aCompleter.size) return;
@@ -1058,43 +1445,105 @@ function appliqueCatalogueAuxCartes() {
     }
     if (!utiles.has(cle)) return;
     const c = complete || find(rec[CH.NOM]);
+    if (c && !complete) { noterSetsArchive(c, rec); noterLegalArchive(c, rec); }
     if (c && rec[CH.PRIX] > 0 && c.price !== rec[CH.PRIX]) { c.price = rec[CH.PRIX]; n++; }
   });
   if (n) scheduleSave();
 }
 
+/* Le tri de la sélection : la boucle qui écarte, puis le classement par rang
+   EDHREC. C'est la partie rapide — quelques dizaines de millisecondes sur tout
+   le catalogue — et elle est commune aux deux façons de bâtir les candidats,
+   d'un bloc ou par tranches. Les critères de la fenêtre s'appliquent ici, sur
+   l'enregistrement compact : c'est ce qui permet de chercher dans tout le
+   catalogue, et non parmi les seules cartes les mieux classées. */
+function selectionCandidats() {
+  const legal = S.filtreLegal ? (fmt().legal || '') : '';
+  const cmd = S.commander ? find(S.commander) : null;
+  const ident = cmd ? cmd.identity : null;
+  const noeuds = noeudsActifs();
+  const st = {total:CAT.cartes.length, legalite:0, identite:0, couleurs:0, possedees:0,
+              prix:0, sansPrix:0, filtres:0, noeuds:0, numeriques:0, retenus:0, coupes:0};
+  const retenus = [];
+  for (const rec of CAT.cartes) {
+    if (!rec || rec.length <= CH.LEGAL) continue;
+    /* Une archive d'avant la colonne ne porte pas l'information : la carte
+       est alors « non jugée » et reste candidate, comme pour la légalité. */
+    if (!S.catalogueNumeriques && rec[CH.NUMERIQUE] === 1) { st.numeriques++; continue; }
+    if (legal && String(rec[CH.LEGAL] || '').indexOf(legal) < 0) { st.legalite++; continue; }
+    const id = rec[CH.ID_COUL] ? String(rec[CH.ID_COUL]).split('') : [];
+    if (ident && id.some(x => !ident.includes(x))) { st.identite++; continue; }
+    if (!colorOK({identity:id})) { st.couleurs++; continue; }
+    if (S.collection.get(rec[CH.NOM]) > 0) { st.possedees++; continue; }
+    /* Le plafond par carte ne vaut que pour un prix connu : une carte dont
+       Scryfall ne publie pas le prix reste candidate, même si la branche
+       « achat » ne saura pas la chiffrer. */
+    const prix = rec[CH.PRIX];
+    if (prix > 0 && prix > S.budget.perCard) { st.prix++; continue; }
+    if (!filtreOKRec(rec)) { st.filtres++; continue; }
+    if (noeuds.length && !recToucheNoeuds(rec, noeuds)) { st.noeuds++; continue; }
+    /* Compté sur les seules retenues : c'est d'elles que la phrase parle. */
+    if (!(prix > 0)) st.sansPrix++;
+    retenus.push(rec);
+  }
+  retenus.sort((a, b) => a[CH.RANG] - b[CH.RANG]);
+  st.retenus = retenus.length;
+  st.coupes = Math.max(0, retenus.length - S.candidatsMax);
+  return {retenus:retenus.slice(0, S.candidatsMax), st};
+}
+
+/* Les cartes du catalogue qu'il vaut la peine de proposer. Le plafond ne vient
+   qu'après la sélection, sur ce qui reste, et il est compté à part pour que la
+   phrase de la section puisse le dire. */
 function candidatsCatalogue() {
   if (CAT.etat !== 'ok' || !CAT.cartes.length) return [];
   const sig = signatureCandidats();
   if (CAND.sig === sig) return CAND.liste;
-  const legal = {edh:'c', standard:'s'}[S.format] || '';
-  const cmd = S.commander ? find(S.commander) : null;
-  const ident = cmd ? cmd.identity : null;
-  const noeuds = noeudsActifs();
-  const retenus = [];
-  for (const rec of CAT.cartes) {
-    if (!rec || rec.length <= CH.LEGAL) continue;
-    if (legal && String(rec[CH.LEGAL] || '').indexOf(legal) < 0) continue;
-    const id = rec[CH.ID_COUL] ? String(rec[CH.ID_COUL]).split('') : [];
-    if (ident && id.some(x => !ident.includes(x))) continue;
-    if (!colorOK({identity:id})) continue;
-    if (S.collection.get(rec[CH.NOM]) > 0) continue;
-    const prix = rec[CH.PRIX];
-    if (prix <= 0 || prix > S.budget.perCard) continue;
-    if (noeuds.length && !recToucheNoeuds(rec, noeuds)) continue;
-    retenus.push(rec);
-  }
-  retenus.sort((a, b) => a[CH.RANG] - b[CH.RANG]);
-  CAND = {sig, liste:retenus.slice(0, S.exploreMax).map(carteDuCatalogue)};
+  const {retenus, st} = selectionCandidats();
+  CAND = {sig, liste:retenus.map(carteDuCatalogue), stats:st};
   return CAND.liste;
+}
+
+/* La même construction, mais par tranches : bâtir les objets carte est le
+   gros du travail, et la barre de progression d'« Appliquer » a besoin de
+   rendre la main pour se peindre. Le résultat garnit la même mémo, si bien
+   que l'appel direct qui suit n'a plus rien à recalculer. */
+async function prechauffeCandidats(onProgress) {
+  if (CAT.etat !== 'ok' || !CAT.cartes.length) return 0;
+  const sig = signatureCandidats();
+  if (CAND.sig === sig) { if (onProgress) onProgress(CAND.liste.length, CAND.liste.length); return CAND.liste.length; }
+  const {retenus, st} = selectionCandidats();
+  const liste = [];
+  const LOT = 1500;
+  /* Annoncé même quand il n'y a rien à bâtir : la barre doit montrer que
+     l'étape a bien eu lieu, pas rester muette. */
+  if (onProgress) onProgress(0, retenus.length);
+  for (let i = 0; i < retenus.length; i += LOT) {
+    const fin = Math.min(retenus.length, i + LOT);
+    for (let j = i; j < fin; j++) liste.push(carteDuCatalogue(retenus[j]));
+    if (onProgress) onProgress(fin, retenus.length);
+    await new Promise(r => setTimeout(r, 0));
+  }
+  CAND = {sig, liste, stats:st};
+  if (onProgress) onProgress(retenus.length, retenus.length);
+  return liste.length;
+}
+
+/* Le détail de ce qui a écarté, pour la phrase de la section Suggestions.
+   Il se calcule avec les candidats, donc on les demande d'abord. */
+function statsCandidats() {
+  if (CAT.etat !== 'ok' || !CAT.cartes.length) return null;
+  candidatsCatalogue();
+  return CAND.stats;
 }
 
 function requeteCatalogue() {
   const cmd = S.commander ? find(S.commander) : null;
   const ident = (cmd ? cmd.identity : [...S.colors].filter(c => c !== 'C'));
   const id = ident.length ? ident.join('').toLowerCase() : 'c';
-  const legal = {edh:'commander', standard:'standard', limite:'', perso:''}[S.format] || '';
-  return [legal ? `legal:${legal}` : '', `id<=${id}`, '-is:token', '-t:basic'].filter(Boolean).join(' ');
+  const legal = S.filtreLegal ? (fmt().scry || '') : '';
+  return [legal ? `legal:${legal}` : '', S.catalogueNumeriques ? '' : 'game:paper',
+          `id<=${id}`, '-is:token', '-t:basic'].filter(Boolean).join(' ');
 }
 
 function signatureCatalogue() { return requeteCatalogue(); }
@@ -1104,14 +1553,14 @@ async function chargerCatalogue() {
   const sig = signatureCatalogue();
   S.exploreSig = sig;
   S.exploreEtat = 'chargement';
-  renderF();
+  renderSuggestions();
   const q = requeteCatalogue();
   let url = 'https://api.scryfall.com/cards/search?order=edhrec&unique=cards&q=' + encodeURIComponent(q);
   let charge = 0, ajoutees = 0;
   try {
     while (url && charge < S.exploreMax) {
       const r = await fetch(url);
-      if (r.status === 404) { S.exploreEtat = 'aucune'; S.exploreTotal = 0; renderF(); return; }
+      if (r.status === 404) { S.exploreEtat = 'aucune'; S.exploreTotal = 0; renderSuggestions(); return; }
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
       if (typeof j.total_cards === 'number') S.exploreTotal = j.total_cards;
@@ -1125,7 +1574,7 @@ async function chargerCatalogue() {
       S.exploreCharge = charge;
       url = j.has_more ? j.next_page : null;
       S.exploreReste = !!url;
-      if (charge <= 175 || charge % 1400 < 175) renderF();
+      if (charge <= 175 || charge % 1400 < 175) renderSuggestions();
       if (url && charge < S.exploreMax) await new Promise(r2 => setTimeout(r2, 110));
     }
     S.exploreEtat = 'ok';

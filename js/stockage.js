@@ -50,14 +50,15 @@ function snapshot() {
     const base = BUILTIN.has(norm(c.name));
     if (base) {
       if (c.img || c.cmUrl || c.artist || c.textFull || c.set) enrich.push({n:c.name, p:c.price, g:c.img||'', G:c.imgN||'', L:c.imgL||'', u:c.cmUrl||'', a:c.artist||'', x:c.textFull ? c.text : '', ...impressionSnap(c)});
-    } else if (c.externe && !(S.collection.get(c.name) > 0) && !S.deck.has(c.name)) {
+    } else if (c.externe && !(S.collection.get(c.name) > 0) && !S.deck.has(c.name) && !annexeDe(c.name)) {
       // vivier d'exploration : non conservé
     } else {
       cartes.push({
         n:c.name, c:c.cost||'—', t:c.type, p:c.price, x:c.text,
         i:(c.identity||[]).join(''), m:c.cmc, f:c.force, e:c.endurance, a:c.artist||'',
         g:c.img||'', G:c.imgN||'', L:c.imgL||'', B:c.imgB||'', BL:c.imgBL||'',
-        u:c.cmUrl||'', k:c.unknown?1:0, X:c.textFull?1:0, ...impressionSnap(c)
+        u:c.cmUrl||'', k:c.unknown?1:0, X:c.textFull?1:0,
+        ...(typeof c.legal === 'string' ? {lg:c.legal} : {}), ...impressionSnap(c)
       });
     }
   });
@@ -67,18 +68,28 @@ function snapshot() {
     date: Date.now(),
     collection: [...S.collection],
     deck: [...S.deck],
+    sideboard: [...S.sideboard],
+    considering: [...S.considering],
+    deckPlie: [...S.deckPlie],
+    secondairesOff: [...S.secondairesOff],
+    groupesPlies: [...S.groupesPlies],
     commander: S.commander,
     colors: [...S.colors],
     colorMode: S.colorMode,
     format: S.format,
     custom: S.custom,
-    sort: S.sort,
+    colonnes: {...S.colonnes},
+    groupes: S.groupes,
+    tris: S.tris,
     filtres: S.filtres,
     view: S.view,
-    images: S.images,
+    onglet: S.onglet,
     graphSource: S.graphSource,
     showImplicit: S.showImplicit,
     budget: S.budget,
+    candidatsMax: S.candidatsMax,
+    catalogueNumeriques: S.catalogueNumeriques,
+    filtreLegal: S.filtreLegal,
     csbRelay: S.csbRelay,
     catalogueActif: S.catalogueActif,
     prixMaj: S.prixMaj,
@@ -111,13 +122,11 @@ function save() {
       saveError = err2.message || 'espace de stockage saturé';
     }
   }
-  const p = document.getElementById('savePill');
-  if (p) p.outerHTML = pillSauvegarde();
   if (saveState !== 'ok' && saveState !== dernierEtatSignale) {
     dernierEtatSignale = saveState;
     toast(saveState === 'partiel'
       ? "Espace de stockage limité : les visuels et les textes des cartes importées ne sont pas conservés, les quantités et le deck le restent."
-      : "Sauvegarde impossible : le stockage du navigateur est saturé. Exportez un fichier depuis la pastille de sauvegarde de l'en-tête pour ne rien perdre.");
+      : "Sauvegarde impossible : le stockage du navigateur est saturé. Exportez un fichier depuis la fenêtre de sauvegarde pour ne rien perdre.");
   }
   if (saveState === 'ok') dernierEtatSignale = 'ok';
 }
@@ -145,6 +154,7 @@ function restore(d) {
     if (o.B) card.imgB = o.B;
     if (o.BL) card.imgBL = o.BL;
     card.unknown = !!o.k;
+    if (typeof o.lg === 'string') card.legal = o.lg;
     if (o.X && o.x) card.textFull = true;
     if (card.img) card.imgTried = true;
     impressionRestore(card, o);
@@ -166,19 +176,62 @@ function restore(d) {
 
   S.collection = new Map((d.collection || []).filter(([n]) => find(n)));
   S.deck = new Map((d.deck || []).filter(([n]) => find(n)));
+  /* Les listes annexes suivent le deck, et la même règle : un nom que la base
+     ne connaît plus ne revient pas. Une sauvegarde antérieure n'en a pas, et
+     les listes restent vides. */
+  CLES_ANNEXES.forEach(cle => {
+    S[cle] = new Map((d[cle] || []).filter(([n]) => find(n) && !S.deck.has(n)));
+  });
   S.commander = d.commander && find(d.commander) ? d.commander : null;
   if (d.colors && d.colors.length !== undefined) S.colors = new Set(d.colors);
-  ['colorMode','format','sort','view','graphSource'].forEach(k => { if (d[k]) S[k] = d[k]; });
-  if (typeof d.images === 'boolean') S.images = d.images;
+  ['colorMode','format','view','graphSource'].forEach(k => { if (d[k]) S[k] = d[k]; });
+  /* Le nombre de colonnes de chaque grille. Les premières sauvegardes n'en
+     portaient qu'un, celui de la collection, en nombre nu : il devient le
+     sien. Une valeur qui n'est plus offerte — une sauvegarde d'une autre
+     version — laisse la grille automatique plutôt qu'une mise en page que le
+     menu ne saurait plus nommer. */
+  if (typeof d.colonnes === 'number') {
+    if (COLONNES.indexOf(d.colonnes) >= 0) S.colonnes.collection = d.colonnes;
+  } else if (d.colonnes && typeof d.colonnes === 'object') {
+    Object.keys(S.colonnes).forEach(liste => {
+      if (COLONNES.indexOf(d.colonnes[liste]) >= 0) S.colonnes[liste] = d.colonnes[liste];
+    });
+  }
+  /* Le rangement de chaque section, une clé inconnue écartée : une sauvegarde
+     d'une version ultérieure ne doit pas laisser la section sans tri. Les
+     sauvegardes antérieures ne portent qu'un tri de collection, `sort`, dont
+     les valeurs sont justement les clés de `TRIS` : il devient celui-là. */
+  ['groupes','tris'].forEach(k => {
+    const src = d[k];
+    if (!src || typeof src !== 'object') return;
+    const table = k === 'groupes' ? GROUPES : TRIS;
+    Object.keys(S[k]).forEach(sec => { if (table[src[sec]]) S[k][sec] = src[sec]; });
+  });
+  if (!d.tris && TRIS[d.sort]) S.tris.collection = d.sort;
   if (typeof d.showImplicit === 'boolean') S.showImplicit = d.showImplicit;
   if (d.custom) S.custom = {...S.custom, ...d.custom, colorLimits:{...S.custom.colorLimits, ...(d.custom.colorLimits||{})}};
   if (d.filtres) S.filtres = {...FILTRES_VIDE, ...d.filtres};
   if (d.budget) S.budget = {...S.budget, ...d.budget};
+  if (typeof d.candidatsMax === 'number' && d.candidatsMax > 0) S.candidatsMax = d.candidatsMax;
+  if (typeof d.filtreLegal === 'boolean') S.filtreLegal = d.filtreLegal;
+  if (typeof d.catalogueNumeriques === 'boolean') S.catalogueNumeriques = d.catalogueNumeriques;
   if (typeof d.csbRelay === 'string') S.csbRelay = d.csbRelay;
   if (typeof d.catalogueActif === 'boolean') S.catalogueActif = d.catalogueActif;
   if (typeof d.prixMaj === 'number') S.prixMaj = d.prixMaj;
   if (typeof d.majIgnoree === 'string') S.majIgnoree = d.majIgnoree;
   if (typeof d.headerCompact === 'boolean') S.headerCompact = d.headerCompact;
+  /* L'onglet ouvert revient comme l'entête compact : on retrouve l'atelier là
+     où on l'avait laissé. Un nom qu'un onglet d'hier portait est traduit
+     (`ONGLETS_ANCIENS`) ; une clé inconnue est écartée, sans quoi plus aucune
+     page ne paraîtrait. */
+  if (ONGLETS[d.onglet]) S.onglet = d.onglet;
+  else if (ONGLETS_ANCIENS[d.onglet]) S.onglet = ONGLETS_ANCIENS[d.onglet];
+  /* Les parties repliées de la section Deck, comme l'en-tête compact : une
+     préférence d'affichage, qu'on retrouve d'une séance à l'autre. */
+  if (Array.isArray(d.deckPlie)) S.deckPlie = new Set(d.deckPlie);
+  if (Array.isArray(d.groupesPlies)) S.groupesPlies = new Set(d.groupesPlies);
+  /* Les commandants secondaires écartés : une préférence, comme les plis. */
+  if (Array.isArray(d.secondairesOff)) S.secondairesOff = new Set(d.secondairesOff);
   return true;
 }
 
@@ -192,30 +245,6 @@ function chargerSauvegarde() {
     saveError = err.message || '';
     return null;
   }
-}
-
-function pillSauvegarde() {
-  const t = {
-    ok: 'Sauvegarde locale',
-    partiel: 'Sauvegarde allégée',
-    plein: 'Sauvegarde saturée',
-    off: 'Sans sauvegarde',
-    desactive: 'Sauvegarde désactivée',
-    corrompu: 'Sauvegarde illisible'
-  }[saveState] || 'Sauvegarde';
-
-  const col = {
-    ok: 'var(--ok)',
-    partiel: 'var(--warn)',
-    plein: 'var(--bad)',
-    off: 'var(--dim2)',
-    desactive: 'var(--dim2)',
-    corrompu: 'var(--bad)'
-  }[saveState];
-
-  return `<button class="pill" id="savePill" data-act="saveDialog" style="cursor:pointer"
-    title="${esc(saveError || 'Cliquez pour gérer la sauvegarde locale')}">
-    <span class="dot" style="background:${col}"></span> ${t}</button>`;
 }
 
 function corpsSauvegarde() {
@@ -235,7 +264,8 @@ function corpsSauvegarde() {
     } catch(e) { return '—'; }
   })();
 
-  return `<div class="small">${etat}</div>
+  return `<div id="blocSauvegarde"></div>
+    <div class="small">${etat}</div>
     <div class="small muted">Les données ne quittent jamais cet appareil : ni serveur, ni compte. Un autre navigateur ne les verra pas — utilisez l'export pour les transporter.
       ${saveState==='desactive'?'':`<br>Espace occupé : ${taille}.`}</div>
     <label class="row small" style="gap:8px;margin-top:4px">
@@ -243,7 +273,6 @@ function corpsSauvegarde() {
       Enregistrer mes données sur cet appareil
     </label>
     <div class="small muted">Décochez sur un ordinateur qui n'est pas le vôtre : les données déjà enregistrées sont effacées immédiatement, et plus rien n'est écrit ensuite.</div>
-    ${blocCatalogueSauvegarde()}
     <div class="row" style="gap:6px;margin-top:6px">
       <button type="button" class="btn sm" data-act="saveNow">Enregistrer maintenant</button>
       <button type="button" class="btn sm" data-act="saveExport">Exporter un fichier</button>
@@ -253,7 +282,7 @@ function corpsSauvegarde() {
     </div>`;
 }
 
-function blocCatalogueSauvegarde() {
+function blocCatalogue() {
   const dispo = (typeof indexedDB !== 'undefined');
   const taille = CAT.octets ? `${(CAT.octets/1048576).toFixed(1)} Mo` : '—';
   const maj = CAT.maj ? new Date(CAT.maj).toLocaleDateString('fr-FR') : 'inconnue';
@@ -266,8 +295,8 @@ function blocCatalogueSauvegarde() {
     erreur: 'échec du dernier chargement'
   }[CAT.etat] || CAT.etat;
 
-  return `<div class="bloc" style="border-top:1px solid var(--line);padding-top:9px;margin-top:4px">
-    <h4 style="margin:0 0 6px;font-family:var(--display);font-size:14px">Catalogue des cartes Magic</h4>
+  return `<div class="bloc" id="blocCatalogue" style="border-top:1px solid var(--line);padding-top:9px;margin-top:4px">
+    <h4 style="margin:0 0 6px;font-family:var(--display);font-size:14px">Gestion de l'archive</h4>
     <div class="small">${dispo
       ? `Archivé dans IndexedDB, séparément de vos données de collection — le quota de localStorage, 5 Mo, ne suffirait pas.`
       : `IndexedDB indisponible dans ce navigateur : le catalogue ne peut pas être archivé.`}</div>
@@ -311,20 +340,22 @@ function blocCatalogueSauvegarde() {
   </div>`;
 }
 
-/* La fenêtre de sauvegarde reste ouverte pendant qu'une archive se charge :
-   son contenu est réécrit sur place quand l'état du catalogue a bougé. */
+/* La fenêtre des paramètres reste ouverte pendant qu'une archive se charge :
+   son contenu est réécrit sur place quand l'état du catalogue a bougé. Le
+   repère est un marqueur explicite — le bloc du catalogue, qui n'existe que
+   là. */
 function rafraichirFenetreSauvegarde() {
-  const corps = document.getElementById('dlgBody');
-  if (!corps || !corps.innerHTML.includes('Catalogue des cartes Magic')) return;
-  corps.innerHTML = corpsSauvegarde();
-  brancherRestauration();
-  brancherCatalogue();
+  if (typeof majFenetreParametres === 'function') majFenetreParametres();
 }
 
-function openSaveDialog() {
-  openDialog('Sauvegarde locale', corpsSauvegarde(), '<button class="btn" value="ok">Fermer</button>');
+/* L'interrupteur de la sauvegarde, dans la section « Sauvegarde locale » de
+   la fenêtre des paramètres : cocher réactive et réécrit tout, décocher
+   efface sur-le-champ ce que cet appareil gardait. La section est ensuite
+   réécrite pour dire le nouvel état. */
+function brancherSauvegarde() {
   const sw = document.getElementById('saveSwitch');
-  if (sw) sw.addEventListener('change', ev => {
+  if (!sw) return;
+  sw.addEventListener('change', ev => {
     if (ev.target.checked) {
       try { localStorage.removeItem(STORE_OFF); } catch(e) {}
       saveState = 'ok';
@@ -338,11 +369,8 @@ function openSaveDialog() {
       toast("Sauvegarde désactivée et données effacées de cet appareil.");
     }
     renderTop();
-    document.getElementById('dlgBody').innerHTML = corpsSauvegarde();
-    brancherRestauration();
+    if (typeof majFenetreParametres === 'function') majFenetreParametres();
   });
-  brancherRestauration();
-  brancherCatalogue();
 }
 
 function brancherCatalogue() {
@@ -351,12 +379,21 @@ function brancherCatalogue() {
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
     try {
-      await lireCatalogueFichier(f, f.name);
+      /* Un fichier posé à la main se lit aussi longuement qu'une archive
+         téléchargée : la même boîte en rend compte. Sa taille décompressée
+         reste inconnue, la seconde barre affichera donc un compte seul. */
+      const suivi = nouveauSuivi('fichier', f.size || 0, 0);
+      CAT.suivi = suivi;
+      ouvrirBoiteCatalogue();
+      await lireCatalogueFichier(f, f.name, suivi);
+      fermerBoiteCatalogue();
       rafraichirFenetreSauvegarde();
     } catch(err) {
+      fermerBoiteCatalogue();
+      if (err.abandon) { toast('Lecture de l\'archive interrompue.'); return; }
       CAT.etat = 'erreur';
       CAT.detail = `lecture du fichier impossible : ${err.message || 'format inattendu'}`;
-      renderF();
+      renderSuggestions();
       toast(`Fichier illisible : ${err.message || 'format inattendu'}.`);
     }
   });

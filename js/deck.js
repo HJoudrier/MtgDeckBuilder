@@ -21,6 +21,142 @@ function availableFor(card) {
   return (S.collection.get(card.name) || 0) - (S.deck.get(card.name) || 0);
 }
 
+/* =====================================================================
+   Les listes annexes — réserve et étude. Mêmes gestes que le deck, mais
+   à côté de lui : elles ne comptent ni dans la taille, ni dans la légalité,
+   ni dans la courbe, ni dans les rôles, ni dans les achats. `ANNEXES`
+   (js/etat.js) dit ce que chacune est ; ce qui suit ne connaît que leur clé.
+   ===================================================================== */
+
+function annexeListe(cle) {
+  return S[cle] instanceof Map ? S[cle] : new Map();
+}
+
+/* Les mêmes entrées que `deckEntries()`, dans le même ordre : type, coût,
+   nom. Les deux listes s'affichent comme le deck, il leur faut son tri. */
+function annexeEntries(cle) {
+  const out = [];
+  annexeListe(cle).forEach((q, n) => {
+    const c = find(n);
+    if (c && q > 0) out.push({card:c, qty:q});
+  });
+  return out.sort((a, b) => TYPE_ORDER.indexOf(mainType(a.card)) - TYPE_ORDER.indexOf(mainType(b.card)) || a.card.cmc - b.card.cmc || a.card.name.localeCompare(b.card.name));
+}
+
+function annexeSize(cle) {
+  let n = 0;
+  annexeListe(cle).forEach(q => n += q);
+  return n;
+}
+
+/* Où vit cette carte hors du deck : la clé de la liste, ou rien. */
+function annexeDe(nom) {
+  return CLES_ANNEXES.find(k => annexeListe(k).has(nom)) || null;
+}
+
+/* Le déplacement emporte tous les exemplaires : les trois listes s'excluant,
+   une carte partagée entre deux d'entre elles n'aurait pas de sens. Vers le
+   deck, le format borne malgré tout les copies — le reste attend là où il
+   était. Rend le nombre d'exemplaires déplacés. */
+function deplacerCarte(nom, cible) {
+  const c = find(nom); if (!c) return 0;
+  const source = (S.deck.get(nom) || 0) ? 'deck' : annexeDe(nom);
+  if (source === cible) return 0;
+  const dispo = source === 'deck' ? (S.deck.get(nom) || 0) : (source ? annexeListe(source).get(nom) : 0);
+  let n = Math.max(1, dispo);
+
+  if (cible === 'deck') {
+    const f = fmt();
+    const max = /^Basic Land/i.test(c.type) ? n : Math.max(0, f.maxCopies - (S.deck.get(nom) || 0));
+    n = Math.min(n, max);
+    if (n <= 0) { toast(`${nom} : limite de ${f.maxCopies} copie(s) atteinte dans le deck.`); return 0; }
+    S.deck.set(nom, (S.deck.get(nom) || 0) + n);
+  } else {
+    annexeListe(cible).set(nom, (annexeListe(cible).get(nom) || 0) + n);
+  }
+
+  if (source === 'deck') {
+    const reste = (S.deck.get(nom) || 0) - (cible === 'deck' ? 0 : n);
+    if (reste > 0) S.deck.set(nom, reste); else S.deck.delete(nom);
+    /* Le commandant part avec sa carte : le deck n'en a plus. */
+    if (cible !== 'deck' && S.commander === nom && !S.deck.has(nom)) S.commander = null;
+  } else if (source) {
+    const reste = dispo - n;
+    if (reste > 0) annexeListe(source).set(nom, reste); else annexeListe(source).delete(nom);
+  }
+  return n;
+}
+
+/* Poser une carte dans une liste annexe, d'où qu'elle vienne : du deck, de
+   l'autre liste, ou de nulle part — la collection, la recherche, une
+   suggestion. */
+function versAnnexe(nom, cle, qty) {
+  const c = find(nom); if (!c || !ANNEXES[cle]) return;
+  const a = ANNEXES[cle], l = annexeListe(cle);
+  const demande = Math.max(1, qty || 1);
+  const source = (S.deck.get(nom) || 0) ? 'deck' : annexeDe(nom);
+
+  /* Déjà là : la demande s'ajoute. Ailleurs : la carte déménage avec ses
+     exemplaires, et la demande complète ce que le déménagement n'apporte
+     pas. Nulle part : elle arrive telle qu'on la demande. */
+  let deplaces = 0;
+  if (source && source !== cle) {
+    deplaces = deplacerCarte(nom, cle);
+    if (!deplaces) return;
+  }
+  const reste = demande - (deplaces || 0);
+  if (reste > 0) l.set(nom, (l.get(nom) || 0) + reste);
+
+  recalculerAvecProgression(`${nom} placée dans ${a.article} : les suggestions tiennent compte du nouveau deck.`);
+  const total = l.get(nom) || 0;
+  toast(source === 'deck' ? `${nom} quitte le deck pour ${a.article} (×${total}).`
+    : source && source !== cle ? `${nom} déplacée vers ${a.article} (×${total}).`
+    : `${nom} dans ${a.article} : ×${total}.`);
+}
+
+/* Un exemplaire retiré d'une liste annexe ; le dernier retire la carte. */
+function retirerAnnexe(nom, cle) {
+  const l = annexeListe(cle), cur = l.get(nom) || 0;
+  if (cur <= 1) l.delete(nom); else l.set(nom, cur - 1);
+  recalculerAvecProgression(`${nom} retirée de ${ANNEXES[cle].article} : les suggestions sont reprises.`);
+}
+
+function viderAnnexe(cle) {
+  annexeListe(cle).clear();
+  recalculerAvecProgression(`${ANNEXES[cle].titre} : liste vidée, les suggestions sont reprises.`);
+  toast(`${ANNEXES[cle].titre} : liste vidée.`);
+}
+
+/* Le tag que portent, partout ailleurs, les cartes garées dans une annexe :
+   sans lui, on reproposerait sans fin une carte déjà mise de côté. */
+function tagAnnexe(card) {
+  const cle = card ? annexeDe(card.name) : null;
+  if (!cle) return '';
+  const n = annexeListe(cle).get(card.name);
+  return `<span class="tag" style="border-color:#6f7bd0;color:#9aa4e6" title="${esc(ANNEXES[cle].aide)}">${esc(ANNEXES[cle].titre.toLowerCase())}${n > 1 ? ` ×${n}` : ''}</span>`;
+}
+
+/* Les Game Changers de la liste principale. Leur nombre décide du palier
+   qu'un deck Commander peut revendiquer : aucun aux paliers 1 et 2, jusqu'à
+   trois au palier 3, sans limite aux paliers 4 et 5. La réserve et l'étude
+   n'y entrent pas — elles ne se jouent pas. */
+function gameChangersDuDeck() {
+  return deckEntries().filter(e => estGameChanger(e.card) === true);
+}
+
+/* Ce que ce décompte dit du palier, en une phrase. */
+function ligneGameChangers() {
+  if (!fmt().commander || !gameChangersConnus()) return '';
+  const gc = gameChangersDuDeck();
+  const n = gc.reduce((x, e) => x + e.qty, 0);
+  if (!n) return '';
+  return `<div class="small muted" style="margin:8px 0 0">
+    ${n} carte(s) classée(s) <b style="color:#cba6e8">Game Changer</b> par Wizards :
+    ${gc.map(e => esc(e.card.name)).join(', ')}.
+    ${n > 3 ? 'Au-delà de trois, le deck relève des paliers 4 ou 5.'
+            : 'Le palier 2 n\'en admet aucune, le palier 3 jusqu\'à trois.'}</div>`;
+}
+
 function targets() {
   const f = fmt(), k = f.size / 100;
   if (S.format === 'limite') return {terrains:17, creatures:15, interaction:4, pioche:2, ramp:1, tuteurs:0, wipe:0, protection:1};
@@ -60,6 +196,11 @@ function legality() {
   if (f.commander && !S.commander) msgs.push('Aucun commandant désigné.');
   const jetons = deckEntries().filter(e => e.card.isToken);
   if (jetons.length) msgs.push(`${jetons.length} jeton(s) dans le deck (${jetons.slice(0,3).map(e=>e.card.name).join(', ')}) : un jeton ne se joue pas depuis la main.`);
+  /* Le deck ne masque jamais une carte illégale — elle doit rester retirable —
+     donc c'est ici qu'elle se signale. */
+  const illegales = deckEntries().filter(e => carteLegale(e.card) === false);
+  if (illegales.length) msgs.push(`${illegales.length} carte(s) non légale(s) en ${f.label} : ${
+    illegales.slice(0,3).map(e => e.card.name).join(', ')}${illegales.length > 3 ? '…' : ''}.`);
   deckEntries().forEach(e => {
     const possede = S.collection.get(e.card.name) || 0;
     if (e.qty > possede && S.budget.total <= 0)
@@ -90,6 +231,17 @@ function legality() {
 function addToDeck(name) {
   const c = find(name); if (!c) return;
   const f = fmt();
+  /* La carte attendait dans une liste annexe : elle passe dans le deck avec
+     ses exemplaires, plutôt que d'y être ajoutée une seconde fois. */
+  const annexe = annexeDe(name);
+  if (annexe) {
+    const n = deplacerCarte(name, 'deck');
+    if (!n) return;
+    if (f.commander && !S.commander && c.isLegendaryCreature) S.commander = name;
+    recalculerAvecProgression(`${name} ajoutée au deck : les suggestions sont renotées d'après le deck qui vient de changer.`);
+    toast(`${name} ×${n} quitte ${ANNEXES[annexe].article} pour le deck.`);
+    return;
+  }
   const cur = S.deck.get(name) || 0;
   if (!/^Basic Land/i.test(c.type) && cur >= f.maxCopies) { toast(`${name} : limite de ${f.maxCopies} copie(s) atteinte.`); return; }
   const aPayer = availableFor(c) <= 0;
@@ -99,12 +251,16 @@ function addToDeck(name) {
     toast(`${name} n'est pas dans votre collection : ajoutée au deck et comptée à l'achat${prix?` (≈ ${eur(prix)})`:''}.`);
   }
   if (f.commander && !S.commander && c.isLegendaryCreature) S.commander = name;
-  renderAll();
+  recalculerAvecProgression(`${name} ajoutée au deck : les suggestions sont renotées d'après le deck qui vient de changer.`);
 }
 
 function deckAdd(card, qty, opts) {
   opts = opts || {};
   const f = fmt();
+  /* Le deck l'emporte sur les listes annexes : une carte qui y entre quitte
+     la réserve ou l'étude, les trois listes s'excluant. */
+  const annexe = annexeDe(card.name);
+  if (annexe) annexeListe(annexe).delete(card.name);
   let n = 0, achetees = 0;
   for (let i = 0; i < qty; i++) {
     const cur = S.deck.get(card.name) || 0;
@@ -126,12 +282,12 @@ function removeFromDeck(name) {
     S.deck.delete(name);
     if (S.commander === name) S.commander = null;
   } else S.deck.set(name, cur - 1);
-  renderAll();
+  recalculerAvecProgression(`${name} retirée du deck : les suggestions sont renotées d'après le deck qui vient de changer.`);
 }
 
 function buyCard(name) {
   if (S.budget.total <= 0 || S.budget.perCard <= 0) {
-    toast('Budget à zéro : aucun achat possible. Augmentez le budget en section E.');
+    toast('Budget à zéro : aucun achat possible. Augmentez le budget dans la fenêtre « Achats sur Cardmarket », par la pastille « Budget » de l\'en-tête.');
     return;
   }
   const c = find(name);
@@ -139,7 +295,7 @@ function buyCard(name) {
   if (!o) { toast("Aucune offre ne passe vos filtres d'état, de langue ou de prix maximum."); return; }
   if (spent() + o.price > S.budget.total) { toast('Budget dépassé. Augmentez-le, ou retirez une carte à acheter du deck.'); return; }
   deckAdd(c, 1, {force:true});
-  renderAll();
+  recalculerAvecProgression(`${name} ajoutée au deck : les suggestions sont renotées d'après le deck qui vient de changer.`);
   toast(`${name} ajoutée au deck, comptée à l'achat : ${eur(o.price)} estimés (${o.condition} ou mieux, ${o.lang}).`);
 }
 
@@ -359,6 +515,16 @@ function ficheHTML(card) {
         <div class="small ${dispo>0?'muted':'buy'}">${dispo>0
           ? `${dispo} exemplaire(s) disponibles dans la collection${dansDeck?` · ${dansDeck} déjà dans le deck`:''}`
           : (offre ? `hors collection — ≈ ${eur(offre.price)} sur Cardmarket (${offre.condition} ou mieux)` : 'hors collection et hors budget')}</div>
+        ${estGameChanger(card) === true ? `<div class="small" style="color:#cba6e8">Classée <b>Game Changer</b> par Wizards : au Commander, sa présence hausse le palier du deck — aucune aux paliers 1 et 2, jusqu'à trois au palier 3.</div>` : ''}
+        ${(() => {
+          /* Où cette carte se trouve, si ce n'est pas dans la liste
+             principale : sans cela, la fiche laisserait croire qu'elle
+             n'est nulle part. */
+          const cle = annexeDe(card.name);
+          if (!cle) return '';
+          const q = annexeListe(cle).get(card.name) || 0;
+          return `<div class="small" style="color:#9aa4e6">Hors de la liste principale : ${esc(ANNEXES[cle].titre.toLowerCase())}${q > 1 ? ` ×${q}` : ''}.</div>`;
+        })()}
       </div>
     </div>
     <div class="bloc"><h4>Ce qu'elle apporte au deck</h4>
@@ -400,6 +566,75 @@ function ficheHTML(card) {
       ${partC.length ? partC.map(lien).join('') : '<div class="arc muted">aucune</div>'}</div>`;
 }
 
+/* ---------------------------------------------------------------------
+   Le fil de lecture d'une fiche.
+
+   Une fiche s'ouvre presque toujours depuis une liste : la collection, le
+   deck, les propositions d'un onglet. Les deux boutons de son entête suivent
+   cette liste — la carte précédente, la suivante —, et l'ordre qu'ils suivent
+   est celui qu'on a sous les yeux : le parcours est relevé sur le document
+   lui-même au moment du geste, non reconstruit depuis l'état. Filtres,
+   groupement, tri, pagination et catégories repliées y sont déjà.
+
+   Les noms sont retenus, non les éléments : un rendu peut survenir entre deux
+   fiches — ajouter la carte au deck en rouvre une —, et des éléments retenus
+   ne seraient plus dans le document. Un même nom paraissant dans deux
+   catégories — les groupements par sous-type ou par rôle rangent une carte à
+   plusieurs endroits — n'est retenu qu'une fois.
+   --------------------------------------------------------------------- */
+let PARCOURS_FICHE = {noms: [], i: -1};
+
+function poseParcoursFiche(el, nom) {
+  const zone = el && el.closest ? el.closest('section.sec') : null;
+  const noms = [];
+  if (zone) zone.querySelectorAll('[data-card]').forEach(x => {
+    const n = x.getAttribute('data-card');
+    if (n && noms.indexOf(n) < 0) noms.push(n);
+  });
+  const i = noms.indexOf(nom);
+  /* Une carte seule n'est pas un parcours : les deux boutons resteront
+     inertes plutôt que de tourner en rond sur elle-même. */
+  PARCOURS_FICHE = (i >= 0 && noms.length > 1) ? {noms, i} : {noms: [], i: -1};
+}
+
+/* Passer à la voisine. Les extrémités ne bouclent pas : la première carte n'a
+   pas de précédente, et son bouton est désactivé — mieux vaut le voir que
+   d'atterrir à la fin de la liste sans l'avoir voulu. */
+function ficheVoisine(pas) {
+  const {noms, i} = PARCOURS_FICHE;
+  const j = i + pas;
+  if (!noms.length || j < 0 || j >= noms.length) return;
+  PARCOURS_FICHE = {noms, i: j};
+  openCardModal(noms[j]);
+  /* L'entête vient d'être réécrit sous le doigt : le bouton qu'on venait de
+     presser n'existe plus, et le focus serait retombé sur la fenêtre — la
+     touche Entrée n'aurait plus rien sous elle. Il retrouve donc le bouton de
+     même sens, ou son voisin si celui-là est devenu inerte au bout de la
+     liste. */
+  const meme = document.querySelector(`#dlgTitle .dlg-nav[data-pas="${pas}"]`);
+  const cible = (meme && !meme.disabled) ? meme : document.querySelector(`#dlgTitle .dlg-nav[data-pas="${-pas}"]`);
+  if (cible && typeof cible.focus === 'function') cible.focus();
+}
+
+/* L'entête de la fiche : le nom au centre, une flèche de chaque côté. Celle de
+   droite a pris la place de la croix ; la fenêtre se ferme toujours par Échap,
+   par l'arrière-plan, ou par le bouton « Fermer » de son pied. */
+function enteteFiche(nom) {
+  const {noms, i} = PARCOURS_FICHE;
+  const voisin = pas => (i >= 0 && i + pas >= 0 && i + pas < noms.length) ? noms[i + pas] : '';
+  const bouton = (pas, glyphe, sens, touche) => {
+    const v = voisin(pas);
+    return `<button type="button" class="btn sm dlg-nav" data-act="ficheNav" data-pas="${pas}"
+      ${v ? '' : 'disabled'} aria-label="Carte ${sens}"
+      title="${v ? `Carte ${sens} (${touche}) : ${esc(v)}` : `Aucune carte ${sens} dans la liste parcourue`}">${glyphe}</button>`;
+  };
+  return `<div class="dlg-h-nav">
+    ${bouton(-1, '‹', 'précédente', '←')}
+    <h3 class="dlg-titre">${esc(nom)}${noms.length ? `<span class="small muted"> · ${i + 1} / ${noms.length}</span>` : ''}</h3>
+    ${bouton(1, '›', 'suivante', '→')}
+  </div>`;
+}
+
 function openCardModal(name) {
   const card = find(name); if (!card) return;
   const rouvre = ok => { if (ok && document.getElementById('dlg') && document.getElementById('dlg').open) openCardModal(name); };
@@ -408,15 +643,32 @@ function openCardModal(name) {
   chercheImpressions(card).then(rouvre);
   cacherApercu();
   const dispo = availableFor(card), offre = dispo > 0 ? null : bestOffer(card);
+  /* Une carte garée dans une liste annexe remonte au deck telle quelle : elle
+     y est déjà, il n'y a rien à acheter pour l'y mettre. */
+  const annexe = annexeDe(card.name);
   const actions = [
-    dispo > 0
+    annexe
+      ? `<button type="button" class="btn pri" data-act="toDeck" data-name="${esc(card.name)}">Remonter dans le deck</button>`
+      : dispo > 0
       ? `<button type="button" class="btn pri" data-act="toDeck" data-name="${esc(card.name)}">Ajouter au deck</button>`
       : (offre ? `<button type="button" class="btn pri" data-act="buy" data-name="${esc(card.name)}">Acheter + ajouter</button>` : ''),
     (S.deck.get(card.name) || 0) ? `<button type="button" class="btn" data-act="fromDeck" data-name="${esc(card.name)}">Retirer du deck</button>` : '',
+    /* Les deux listes annexes : y poser la carte, ou l'en retirer. */
+    ...CLES_ANNEXES.map(cle => annexeDe(card.name) === cle
+      ? `<button type="button" class="btn" data-act="dropAnnexe" data-liste="${cle}" data-name="${esc(card.name)}">${esc(ANNEXES[cle].retirer)}</button>`
+      : `<button type="button" class="btn" data-act="toAnnexe" data-liste="${cle}" data-name="${esc(card.name)}" title="${esc(ANNEXES[cle].aide)}">${esc(ANNEXES[cle].poser)}</button>`),
     `<a class="btn" href="${esc(cmLink(card))}" target="_blank" rel="noopener">Cardmarket ↗</a>`,
     `<button type="button" class="btn" data-act="closeDialog">Fermer</button>`
   ].filter(Boolean).join('');
-  openDialog(card.name, ficheHTML(card), actions, true);
+  /* Le fil de lecture suit la carte affichée : une fiche rouverte sur place —
+     après un ajout au deck, une face retournée, une réponse de Scryfall —
+     garde son rang, et une fiche ouverte hors de la liste parcourue le rompt
+     plutôt que de laisser deux flèches mener ailleurs. */
+  const rang = PARCOURS_FICHE.noms.indexOf(card.name);
+  if (rang >= 0) PARCOURS_FICHE.i = rang;
+  else if (PARCOURS_FICHE.noms.length) PARCOURS_FICHE = {noms: [], i: -1};
+
+  openDialog(card.name, ficheHTML(card), actions, true, enteteFiche(card.name));
 }
 
 function blocAchats() {
@@ -433,7 +685,7 @@ function blocAchats() {
          <div class="small ${depasse?'':'muted'}" style="margin-bottom:6px">${depasse
             ? `Dépassement de ${eur(total-budget)} sur un budget de ${eur(budget)}.`
             : `Budget de ${eur(budget)} · reste ${eur(budget-total)}.`}</div>`
-      : `<div class="small" style="margin-bottom:6px">Aucun budget défini en section E : ces cartes sont dans le deck mais ne sont pas encore chiffrées comme achat autorisé.</div>`}
+      : `<div class="small" style="margin-bottom:6px">Aucun budget défini : ces cartes sont dans le deck mais ne sont pas encore chiffrées comme achat autorisé. La pastille « Budget » de l'en-tête ouvre de quoi en fixer un.</div>`}
     <div class="list">${lignes.slice(0, 12).map(l => `
       <div class="lrow">
         <span class="dot" style="background:${stripeColor(l.card)}"></span>
@@ -502,6 +754,58 @@ function evalueDeck(entries) {
   });
 }
 
+/* =====================================================================
+   Les trois parties repliables de la section : la liste principale, la
+   réserve, l'étude. Une carte y est vite longue, et l'une des trois suffit
+   souvent : le titre reste lisible plié, avec le résumé qui dit ce que la
+   partie contient. Le pli se retient d'une séance à l'autre (`S.deckPlie`,
+   enregistré comme le reste des préférences) et se bascule sans rien
+   recalculer — le rendu du deck note toutes ses cartes, ce serait payer une
+   notation pour un simple pli.
+   ===================================================================== */
+
+function partieDeck(cle, titre, resume, corps, classe) {
+  const ouverte = !S.deckPlie.has(cle);
+  return `<div class="partie ${ouverte ? 'ouverte' : ''}${classe ? ' ' + classe : ''}" id="partie-${cle}">
+    <button type="button" class="partie-tete" data-act="plierPartie" data-partie="${cle}"
+        aria-expanded="${ouverte}" aria-controls="corps-${cle}"
+        title="${ouverte ? 'Replier cette partie' : 'Déplier cette partie'}">
+      <span class="chev-partie" aria-hidden="true">›</span>
+      <h3>${titre}</h3>
+      ${resume ? `<span class="small muted">${resume}</span>` : ''}
+    </button>
+    <div class="partie-corps" id="corps-${cle}">${corps}</div>
+  </div>`;
+}
+
+/* Une des deux listes annexes, rendue comme le deck : mêmes tuiles, mêmes
+   filtres d'en-tête — ce qu'ils masquent est annoncé plutôt que tu. */
+function blocAnnexe(cle) {
+  const a = ANNEXES[cle];
+  const toutes = annexeEntries(cle);
+  const entries = toutes.filter(e => carteFiltree(e.card));
+  const n = toutes.reduce((x, e) => x + e.qty, 0);
+  const masquees = n - entries.reduce((x, e) => x + e.qty, 0);
+  const valeur = toutes.reduce((x, e) => x + (e.card.price || 0) * e.qty, 0);
+
+  const corps = `<div class="small muted" style="margin-bottom:6px">${esc(a.aide)}</div>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn sm" data-act="addCard" data-cible="${cle}">Ajouter</button>
+      ${n ? `<button class="btn sm danger" data-act="clearAnnexe" data-liste="${cle}">Vider</button>` : ''}
+    </div>
+    ${entries.length
+      ? rendGroupes('deck', groupeCartes(entries, S.groupes.deck, S.tris.deck), S.groupes.deck,
+          ents => S.view === 'grid' ? `<div class="grid">${ents.map(e => cardTile(e, cle)).join('')}</div>`
+                                    : `<div class="list">${ents.map(e => cardRow(e, cle)).join('')}</div>`,
+          g => g.entrees.reduce((x, e) => x + e.qty, 0))
+      : `<div class="empty">${n ? `Les filtres de l'en-tête masquent les ${n} carte(s) de cette liste.` : esc(a.vide)}</div>`}`;
+
+  return partieDeck(cle,
+    `${esc(a.titre)} <span class="small muted">${esc(a.anglais)}</span>`,
+    `${n} carte(s)${n ? ` · ${eur(valeur)}` : ''}${masquees ? ` · ${masquees} masquée(s) par les filtres` : ''}`,
+    corps, 'group');
+}
+
 function renderE() {
   const toutes = deckEntries(), n = deckSize(), f = fmt(), cnt = deckCounts(), tgt = targets();
   evalueDeck(toutes);
@@ -521,50 +825,70 @@ function renderE() {
   const avg = nonland.length ? (nonland.reduce((a, e) => a + e.card.cmc * e.qty, 0) / nonland.reduce((a, e) => a + e.qty, 0)) : 0;
   const price = entries.reduce((a, e) => a + e.card.price * e.qty, 0);
   const msgs = legality();
-  const grouped = {};
-  entries.forEach(e => { const t = mainType(e.card); (grouped[t] = grouped[t] || []).push(e); });
+  /* Le rangement de la section, réglé par la barre ci-dessous et partagé par
+     la liste principale comme par la réserve et l'étude. */
+  const mode = S.groupes.deck;
+  const groupes = groupeCartes(entries, mode, S.tris.deck);
 
   const bodyEl = document.getElementById('bodyE');
   if (bodyEl) {
     bodyEl.innerHTML = `
       <div class="row" style="margin-bottom:10px">
-        <span class="pill" title="Deck entier, filtres compris">Cartes <b>${n}/${f.size}</b></span>
         ${masquees ? `<button type="button" class="pill head-format" data-act="filtres" title="Les filtres de l'en-tête masquent une partie du deck (cliquer pour les modifier)" style="border-color:var(--brass-d);color:var(--brass)">Filtrées <b>${n - masquees}</b> · ${masquees} masquée(s)</button>` : ''}
         <span class="pill" title="${masquees ? 'Cartes affichées seulement' : 'Deck entier'}">CMC moyen <b>${avg.toFixed(2)}</b></span>
         <span class="pill" title="${masquees ? 'Cartes affichées seulement' : 'Deck entier'}">Valeur <b>${eur(price)}</b></span>
-        ${S.commander ? `<span class="pill">Commandant <b>${esc(S.commander)}</b></span>` : ''}
+        ${(() => {
+          if (!fmt().commander || !gameChangersConnus()) return '';
+          const gc = gameChangersDuDeck();
+          const q = gc.reduce((x, e) => x + e.qty, 0);
+          return `<span class="pill" style="${q ? 'border-color:#8a5fb0;color:#cba6e8' : ''}" title="${q
+            ? `Cartes classées « Game Changer » par Wizards : ${esc(gc.map(e => e.card.name).join(', '))}. Le palier 2 n'en admet aucune, le palier 3 jusqu'à trois, les paliers 4 et 5 sans limite.`
+            : 'Aucune carte classée « Game Changer » : le deck reste compatible avec les paliers 1 et 2 du Commander.'}">Game changers <b>${q}</b></span>`;
+        })()}
+        ${CLES_ANNEXES.map(cle => { const q = annexeSize(cle); return q
+          ? `<span class="pill" title="${esc(ANNEXES[cle].aide)} Hors de la liste principale.">${esc(ANNEXES[cle].titre)} <b>${q}</b></span>` : ''; }).join('')}
         ${(() => {
           const a = aAcheter();
           const qte = a.reduce((x, l) => x + l.qty, 0);
-          return qte ? `<span class="pill" style="border-color:var(--bad)"><span class="dot" style="background:var(--bad)"></span> ${qte} à acheter · ${eur(spent())}</span>` : '';
+          return qte ? `<button type="button" class="pill" data-act="wants" style="border-color:var(--bad);cursor:pointer" title="Cartes à acquérir : cliquer pour ouvrir la Wants list Cardmarket"><span class="dot" style="background:var(--bad)"></span> ${qte} à acheter · ${eur(spent())}</button>` : '';
         })()}
         <div class="seg" style="margin-left:auto">
           <button data-view="grid" aria-pressed="${S.view==='grid'}">Grille</button>
           <button data-view="list" aria-pressed="${S.view==='list'}">Liste</button>
         </div>
+        ${barreGroupeTri('deck')}
         <button class="btn" data-act="addCard" data-cible="deck">Ajouter</button>
         <button class="btn" data-act="import" data-cible="deck">Importer MTGO</button>
         <button class="btn" data-act="exportDeck">Exporter</button>
         <button class="btn danger" data-act="clearDeck">Vider le deck</button>
       </div>
       ${msgs.length ? `<div class="warnbox"><b>À corriger</b><ul style="margin:5px 0 0 16px;padding:0">${msgs.slice(0,6).map(m=>`<li>${esc(m)}</li>`).join('')}</ul></div>` : `<div class="warnbox" style="border-color:#2f6b46;background:rgba(79,159,104,.1)">Le deck respecte les contraintes du format.</div>`}
+      ${ligneGameChangers()}
       ${f.commander ? zoneCommandant() : ''}
       ${blocAchats()}
       <h3 style="margin:12px 0 6px;font-size:15px">Courbe de mana</h3>
       ${histogram(cmcSplit, true)}
       <h3 style="margin:14px 0 6px;font-size:15px">Équilibre des rôles</h3>
       <div class="statgrid">${Object.keys(tgt).map(k => gauge(CATLABEL[k]||k, cnt[k]||0, tgt[k], k)).join('')}</div>
-      <h3 style="margin:14px 0 6px;font-size:15px">Liste</h3>
-      ${entries.length ? Object.keys(grouped).sort((a,b) => TYPE_ORDER.indexOf(a) - TYPE_ORDER.indexOf(b)).map(t => `
-        <div class="group"><h4>${t} <span class="small muted">${grouped[t].reduce((a,e)=>a+e.qty,0)}</span></h4>
-        ${S.view==='grid' ? `<div class="grid">${grouped[t].map(e=>cardTile(e,'deck')).join('')}</div>`
-                          : `<div class="list">${grouped[t].map(e=>cardRow(e,'deck')).join('')}</div>`}</div>`).join('')
+      ${partieDeck('liste', 'Liste',
+        `${n} carte(s)${masquees ? ` · ${masquees} masquée(s) par les filtres` : ''}${price ? ` · ${eur(price)}` : ''}${noteMultiple(mode)}`,
+        entries.length ? rendGroupes('deck', groupes, mode, ents => S.view==='grid'
+          ? `<div class="grid">${ents.map(e=>cardTile(e,'deck')).join('')}</div>`
+          : `<div class="list">${ents.map(e=>cardRow(e,'deck')).join('')}</div>`,
+          g => g.entrees.reduce((a,e)=>a+e.qty,0))
         : (n ? `<div class="empty">Les filtres de l'en-tête masquent les ${n} carte(s) du deck. Élargissez-les ou effacez-les pour revoir la liste.</div>`
-             : '<div class="empty">Le deck est vide. Ajoutez des cartes depuis la collection (▲) ou depuis les suggestions en section E.</div>')}`;
+             : '<div class="empty">Le deck est vide. Ajoutez des cartes depuis la collection (▲) ou depuis <button type="button" class="btn sm" data-onglet="catalogue">les suggestions du catalogue</button>.</div>'))}
+      <h3 style="margin:16px 0 6px;font-size:15px">Hors de la liste principale</h3>
+      <div class="small muted">Deux listes tenues à côté du deck. Ce qu'elles portent ne compte ni dans la taille du deck,
+        ni dans sa conformité, ni dans sa courbe, ses rôles ou ses achats. Une carte ne vit que dans l'une des trois listes :
+        l'envoyer ici la retire du deck, la remonter (▲) l'y ramène. La fiche d'une carte — qu'ouvre un clic sur elle —
+        porte les mêmes gestes, et fait passer une carte d'une liste à l'autre.</div>
+      ${CLES_ANNEXES.map(blocAnnexe).join('')}`;
   }
 
   const hintEl = document.getElementById('hintE');
-  if (hintEl) hintEl.textContent = `${n}/${f.size}`;
-  setTimeout(() => queueScryfall(entries.map(e => e.card)), 0);
+  const horsListe = CLES_ANNEXES.map(cle => [ANNEXES[cle].titre.toLowerCase(), annexeSize(cle)]).filter(([, q]) => q);
+  if (hintEl) hintEl.textContent = `${n}/${f.size}${horsListe.length ? ` · ${horsListe.map(([t, q]) => `${t} ${q}`).join(' · ')}` : ''}`;
+  setTimeout(() => queueScryfall(entries.concat(...CLES_ANNEXES.map(annexeEntries)).map(e => e.card)), 0);
   scheduleCombos();
 }

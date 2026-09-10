@@ -42,7 +42,31 @@ header.top.compact .top-in{padding:5px 10px;gap:6px 10px}
 header.top.compact .brand h1{font-size:15px}
 header.top.compact .brand .sub{display:none}
 
-.top-stats{margin-left:auto;display:flex;gap:6px 8px;align-items:center;flex-wrap:wrap}
+/* `min-width:0` : les décomptes s'enroulent d'eux-mêmes, et leur boîte peut
+   donc se rétrécir pour laisser l'engrenage sur la même ligne qu'eux. Sans
+   cela, elle occupait toute la largeur restante et le bouton tombait seul sur
+   une ligne, à gauche. */
+.top-stats{margin-left:auto;min-width:0;display:flex;gap:6px 8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+/* L'engrenage des paramètres, ancré au coin haut-droit de l'entête. Il est
+   posé hors du flux : les décomptes s'enroulent sur autant de lignes qu'il
+   leur en faut, et le bouton reste à la même place — dans le flux, il
+   retombait sous eux, à gauche, dès que leur boîte prenait toute la largeur.
+   La marge droite de l'entête lui réserve sa place, pour que rien ne passe
+   dessous. */
+.top-in{position:relative;padding-right:150px}
+/* Les deux commandes du coin, côte à côte : le bouton des filtres puis
+   l'engrenage. C'est le conteneur qui est ancré, non plus chaque bouton — un
+   seul point à déplacer quand l'entête se replie ou se réduit. */
+.head-actions{position:absolute;right:12px;top:8px;display:flex;align-items:center;gap:6px}
+.head-param{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:30px;height:30px;padding:0;border-radius:99px;border:1px solid var(--line2);
+  background:var(--panel);color:var(--dim);cursor:pointer;transition:color .15s ease,border-color .15s ease
+}
+.head-param:hover{color:var(--brass);border-color:var(--brass)}
+header.top.compact .top-in{padding-right:144px}
+header.top.compact .head-actions{right:10px;top:5px}
+header.top.compact .head-param{width:26px;height:26px}
 .pill{
   font-family:var(--mono);font-size:11.5px;padding:4px 9px;border-radius:99px;
   border:1px solid var(--line2); background:var(--panel); color:var(--dim);white-space:nowrap;
@@ -156,25 +180,49 @@ header.top.compact .brand .sub{display:none}
 .head-toggle.is-compact{color:var(--dim);border-color:var(--line2);background:var(--panel)}
 .head-toggle.is-compact:hover{color:var(--txt);border-color:var(--brass)}
 
-/* ---------- sections repliables ---------- */
-section.sec{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);margin:14px 0;overflow:hidden}
+/* ---------- onglets ---------- */
+/* La barre vit dans l'entête collante : elle ne quitte jamais l'écran, et
+   passer d'un pan de l'atelier à l'autre ne demande pas de remonter. */
+.onglets{
+  max-width:1180px;margin:0 auto;padding:0 12px;
+  display:flex;gap:4px;align-items:stretch;border-top:1px solid var(--line);
+  overflow-x:auto;scrollbar-width:none
+}
+.onglets::-webkit-scrollbar{display:none}
+.onglet{
+  position:relative;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;
+  padding:9px 14px 7px;font-family:var(--display);font-size:14.5px;color:var(--dim);
+  transition:color .15s ease, background .15s ease
+}
+.onglet:hover{color:var(--txt)}
+.onglet[aria-selected=true]{color:var(--brass);border-bottom-color:var(--brass);background:rgba(211,164,65,.08)}
+/* Le point d'attente : un travail de fond dans une page qu'on ne regarde
+   pas — le liseré de la section, lui, y resterait invisible. */
+.onglet .onglet-pt{width:6px;height:6px;border-radius:99px;background:var(--brass);opacity:0;transition:opacity .2s ease}
+.onglet.travaille .onglet-pt{opacity:1;animation:battement 1.2s ease-in-out infinite}
+@keyframes battement{0%,100%{opacity:1}50%{opacity:.25}}
+header.top.compact .onglets{padding:0 10px}
+header.top.compact .onglet{padding:6px 11px 5px;font-size:13px}
+
+/* Une page masquée n'est pas mise en page : rien n'y est mesuré, et son
+   contenu reste rendu, prêt à paraître d'un seul attribut. */
+.page[hidden]{display:none}
+
+/* ---------- sections ---------- */
+section.sec{position:relative;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);margin:14px 0;overflow:hidden;scroll-margin-top:var(--h-entete,110px)}
+/* Le liseré d'un recalcul de fond : posé par-dessus le bord haut de la
+   section, il n'entre pas dans le flux — rien ne bouge sous lui. */
+.sec-progres{position:absolute;left:0;top:0;width:100%;height:3px;background:rgba(211,164,65,.16);pointer-events:none;z-index:2}
+.sec-progres i{display:block;height:100%;width:0;background:var(--brass);transition:width .2s ease}
 .sec-head{
   display:flex;align-items:center;gap:10px;width:100%;
   padding:12px 14px;background:linear-gradient(180deg,var(--panel2),var(--panel));
-  border:0;border-bottom:1px solid transparent;text-align:left
-}
-.sec.open .sec-head{border-bottom-color:var(--line)}
-.sec-head .letter{
-  font-family:var(--display);font-size:14px;width:26px;height:26px;flex:0 0 26px;
-  display:grid;place-items:center;border-radius:6px;
-  background:var(--brass-d);color:#1a1526;font-weight:700
+  border:0;border-bottom:1px solid var(--line);text-align:left
 }
 .sec-head h2{font-size:16px;flex:1;min-width:0}
 .sec-head .hint{color:var(--dim2);font-size:12px;font-family:var(--mono)}
-.chev{transition:transform .18s ease;color:var(--dim);flex:0 0 auto}
-.sec.open .chev{transform:rotate(90deg)}
-.sec-body{display:none;padding:14px}
-.sec.open .sec-body{display:block}
+.sec-body{display:block;padding:14px}
 
 /* ---------- contrôles ---------- */
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -226,6 +274,24 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 
 /* ---------- cartes ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:7px}
+/* Un nombre de colonnes choisi (`S.colonnes`) : la grille de la collection et
+   celle du catalogue le portent chacune. La règle a deux classes, elle
+   l'emporte donc sur les `.grid` et `.sugrid` des requêtes de média : le choix
+   vaut à toutes les largeurs, y compris sur un téléphone où l'on veut
+   justement une seule carte par ligne.
+
+   La largeur d'une colonne est bornée par `--col-max` : à une ou deux
+   colonnes sur un écran large, le visuel serait sans cela agrandi bien
+   au-delà de sa définition (488 px de large chez Scryfall), et l'on gagnerait
+   du flou, non de la lisibilité. `--col-gap` reprend l'écart de la grille
+   qu'on borne, sans quoi la borne tomberait à côté de quelques pixels. */
+.grid.cols, .sugrid.cols{
+  --col-max:460px;
+  --col-gap:7px;
+  grid-template-columns:repeat(var(--cols),minmax(0,1fr));
+  max-width:calc(var(--cols) * var(--col-max) + (var(--cols) - 1) * var(--col-gap))
+}
+.sugrid.cols{--col-gap:9px}
 .cardT, .card{
   position:relative;border:1px solid var(--line);border-radius:8px;padding:6px 7px 5px;
   background:linear-gradient(160deg,var(--panel2),var(--bg2));text-align:left;width:100%;
@@ -236,6 +302,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cimg{width:100%;aspect-ratio:488/680;object-fit:cover;border-radius:5px;background:#191524;display:block}
 .cardT.withimg, .card.withimg{padding:4px;gap:3px}
 .cardT.achat, .card.achat{border-color:var(--bad);box-shadow:0 0 0 1px rgba(211,87,63,.35) inset}
+.cardT.audeck, .card.audeck{border-color:var(--ok);box-shadow:0 0 0 1px rgba(79,159,104,.35) inset}
 .sugrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px}
 .sugT{display:flex;flex-direction:column;gap:4px;padding:7px;border:1px solid var(--line);border-radius:9px;
   background:linear-gradient(160deg,var(--panel2),var(--bg2));cursor:pointer;text-align:left;position:relative}
@@ -256,6 +323,7 @@ input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid v
 .cardT .achatbadge, .card .achatbadge{position:absolute;right:4px;bottom:4px;font-size:9px;padding:1px 4px;border-radius:4px;
   background:rgba(20,16,30,.88);border:1px solid var(--bad);color:#e39a90}
 .lrow.achat{border-color:var(--bad)}
+.lrow.audeck{border-color:var(--ok)}
 .cardT.withimg .cname, .card.withimg .cname{font-size:11.5px;line-height:1.15}
 .detail .dimg{float:right;width:min(190px,38%);border-radius:9px;margin:0 0 8px 12px;background:#191524}
 .imgwrap{position:relative}
@@ -344,6 +412,26 @@ table.tbl th{color:var(--dim2);font-weight:500;font-size:11px;text-transform:upp
 .cmdbox .corps{flex:1;min-width:210px}
 .cardT .cmdbadge{position:absolute;right:5px;top:5px;font-size:9.5px;padding:1px 5px;border-radius:4px;
   background:var(--brass);color:#1a1526;font-weight:600}
+/* Les parties repliables de la section Deck : liste, réserve, étude. Le
+   chevron reprend celui des sections, à la même bascule. */
+.partie{margin:14px 0 0}
+.partie-tete{display:flex;align-items:center;gap:8px;width:100%;padding:2px 0;background:none;border:0;
+  color:var(--txt);cursor:pointer;text-align:left;font-family:inherit}
+.partie-tete h3{margin:0;font-size:15px;font-family:var(--display);flex:0 0 auto}
+/* Le titre d'une catégorie repliable : celui de `.group>h4`, glissé dans le
+   bouton de pli, qui porte désormais la disposition. */
+.partie-tete h4{margin:0;font-size:14px;font-family:var(--display);flex:0 0 auto}
+.partie-tete .small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.partie-tete:hover h3, .partie-tete:hover .chev-partie{color:var(--brass)}
+/* Son propre nom : les sections ne se replient plus — les onglets ont pris
+   ce rôle — mais le chevron d'une partie, lui, garde le sien. */
+.partie-tete .chev-partie{transition:transform .18s ease;color:var(--dim);flex:0 0 auto}
+.partie.ouverte>.partie-tete .chev-partie{transform:rotate(90deg)}
+.partie-corps{display:none}
+.partie.ouverte>.partie-corps{display:block;margin-top:6px}
+.partie.group{padding:8px 10px 10px}
+.partie.group>.partie-tete{padding:0}
+
 .group{border:1px solid var(--line);border-radius:9px;padding:10px;background:var(--bg2);margin-bottom:9px}
 .group>h4{margin:0 0 7px;font-family:var(--display);font-size:14px;display:flex;gap:8px;align-items:center}
 .why{font-size:11.5px;color:var(--dim);margin-top:3px}
@@ -353,6 +441,67 @@ table.tbl th{color:var(--dim2);font-weight:500;font-size:11px;text-transform:upp
 dialog{border:1px solid var(--line2);border-radius:var(--r);background:var(--panel);color:var(--txt);max-width:min(560px,94vw);padding:0}
 dialog::backdrop{background:rgba(8,6,14,.7)}
 .dlg-h{padding:12px 14px;border-bottom:1px solid var(--line);font-family:var(--display);font-size:16px}
+/* L'entête d'une fiche de carte : le nom au centre, une flèche de chaque côté
+   — celle de droite a pris la place de la croix. Un bouton inerte reste
+   visible plutôt que de disparaître : le titre garderait sinon son centre au
+   prix d'un saut, aux deux extrémités de la liste parcourue. */
+/* La liste des commandants du deck, en tête de l'onglet EDHREC : deux listes
+   — les principaux, puis les secondaires —, une ligne par carte. La marque à
+   gauche (l'étoile d'un principal, la case d'un secondaire), le nom au milieu,
+   le nombre de decks à droite, qui est aussi le lien vers EDHREC. Une ligne
+   décochée pâlit sans disparaître : c'est par elle qu'on la rétablit. */
+.cmd-bloc{margin:8px 0;padding-top:6px;border-top:1px dashed var(--line2)}
+.cmd-titre{margin-bottom:2px}
+.cmd-rows{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.cmd-l{display:flex;align-items:center;gap:9px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg2)}
+.cmd-l.on{border-color:#2f6b68}
+.cmd-l .cmd-b{flex:0 0 auto;width:17px;text-align:center;font-size:13px}
+.cmd-l .etoile{color:var(--brass)}
+.cmd-l .cmd-n{flex:1;min-width:0;padding:0;border:0;background:none;text-align:left;cursor:pointer;
+  font-family:var(--display);font-size:13.5px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmd-l .cmd-n:hover{color:var(--brass)}
+.cmd-l.off .cmd-n{color:var(--dim2)}
+.cmd-l .cmd-d{flex:0 0 auto;font-family:var(--mono);font-size:11px;color:#57c9c4;text-decoration:none;white-space:nowrap}
+.cmd-l .cmd-d:hover{text-decoration:underline}
+.cmd-l.off .cmd-d{color:var(--dim2)}
+
+/* La case à cocher, dessinée plutôt qu'empruntée au navigateur : un carré
+   arrondi qui se remplit du vert d'EDHREC, et la coche tracée en deux traits.
+   Celle du navigateur ne se colore pas, ne s'arrondit pas, et jurait au milieu
+   d'une ligne sombre. */
+.coche{
+  appearance:none;-webkit-appearance:none;flex:0 0 auto;margin:0;
+  width:17px;height:17px;border:1.5px solid var(--line2);border-radius:5px;
+  background:var(--panel);cursor:pointer;position:relative;
+  transition:background .15s ease,border-color .15s ease
+}
+.coche:hover{border-color:#57c9c4}
+.coche:checked{background:#2f6b68;border-color:#57c9c4}
+.coche:checked::after{
+  content:'';position:absolute;left:5px;top:1.5px;width:4px;height:9px;
+  border:solid #d9fffd;border-width:0 2px 2px 0;transform:rotate(42deg)
+}
+.coche:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+
+@media (max-width:520px){
+  .cmd-l{flex-wrap:wrap}
+  .cmd-l .cmd-d{width:100%;padding-left:26px}
+}
+
+/* Les sections de la fenêtre des paramètres : un filet et un titre séparent
+   chaque groupe de réglages du suivant, la fenêtre en portant trois. */
+.params{display:flex;flex-direction:column;gap:14px}
+.param-sec{border:1px solid var(--line);border-radius:9px;padding:10px 11px;background:var(--bg2)}
+.param-sec>h4{margin:0 0 4px;font-family:var(--display);font-size:15px;color:var(--brass)}
+.param-sec .param-chapeau{margin-bottom:8px}
+.param-sec .bloc{border-top:0!important;margin-top:0!important}
+
+.dlg-h-nav{display:flex;align-items:center;gap:10px;width:100%}
+.dlg-titre{flex:1;min-width:0;margin:0;text-align:center;font-family:var(--display);font-size:17px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dlg-nav{flex:0 0 auto;padding:1px 11px;line-height:1;font-size:19px}
+.dlg-nav[disabled]{opacity:.3;cursor:default}
+.dlg-nav[disabled]:hover{border-color:var(--line2);color:inherit}
 .dlg-b{padding:14px;display:flex;flex-direction:column;gap:10px;max-height:min(68vh,620px);overflow:auto}
 dialog.wide{max-width:min(760px,96vw)}
 .fiche{display:flex;gap:14px;flex-wrap:wrap}
@@ -422,8 +571,20 @@ textarea{width:100%;min-height:150px;font-family:var(--mono);font-size:12px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:7px}
   .brand h1{font-size:16px} .brand .sub{display:none}
   .sec-head{padding:11px 10px} .sec-body{padding:10px}
+  .onglets{padding:0 6px;gap:0;border-top-color:var(--line2)}
+  /* Cinq onglets sur un écran de téléphone : ils se partagent la largeur tant
+     qu'ils y tiennent, et la barre glisse latéralement quand ils n'y tiennent
+     plus — sans jamais couper un nom. */
+  .onglet{flex:1 0 auto;justify-content:center;padding:8px 6px 6px;font-size:12.5px}
   .bars{height:120px}
+  /* Ici les pastilles passent à la ligne (`width:100%` plus bas), si bien que
+     la première ligne ne porte que le titre : c'est à lui de réserver le coin,
+     et non à l'entête entière — une réserve sur `.top-in` amputerait aussi la
+     rangée des pastilles, de cent-quarante pixels sur quatre cents. */
   .top-in{padding:6px 8px;gap:6px 8px}
+  .brand{padding-right:138px}
+  .head-actions{right:8px;top:6px;gap:4px}
+  .head-param{width:28px;height:28px}
   .top-stats{gap:4px 6px;width:100%;justify-content:flex-start}
   .head-colors{gap:4px}
   .head-mana-bar{gap:2px}
@@ -439,3 +600,9 @@ textarea{width:100%;min-height:150px;font-family:var(--mono);font-size:12px}
 #cardPreview{position:fixed;z-index:1000;pointer-events:none;display:none;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.7);background:var(--panel);border:1px solid var(--brass-d);max-width:250px;overflow:hidden}
 #cardPreview img{display:block;width:240px;height:auto;border-radius:8px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* Barre de progression du filtrage, dans le pied de la fenêtre des filtres :
+   elle occupe sa propre ligne sous les boutons. */
+.dlg-f{flex-wrap:wrap}
+.filtre-progres{flex:1 1 100%;display:flex;flex-direction:column;gap:4px}
+.dlg-f .btn:disabled{opacity:.45;cursor:default}

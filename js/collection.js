@@ -27,17 +27,44 @@ function collectionCards() {
 }
 
 function filtered() {
-  const list = collectionCards().filter(e => carteFiltree(e.card));
+  const list = collectionCards().filter(e => carteRetenue(e.card));
   const f = fmt();
   list.forEach(e => e.usable = Math.min(e.qty, f.maxCopies));
-  const cmp = {
-    cmc:   (a, b) => a.card.cmc - b.card.cmc || a.card.name.localeCompare(b.card.name),
-    price: (a, b) => b.card.price - a.card.price,
-    alpha: (a, b) => a.card.name.localeCompare(b.card.name),
-    type:  (a, b) => TYPE_ORDER.indexOf(mainType(a.card)) - TYPE_ORDER.indexOf(mainType(b.card)) || a.card.cmc - b.card.cmc,
-    qty:   (a, b) => b.qty - a.qty
-  }[S.sort];
-  return list.sort(cmp);
+  /* Les comparateurs vivent maintenant dans `TRIS` (js/groupes.js), partagés
+     avec le deck et les suggestions. Le tri par score demande une notation de
+     la collection : elle n'a lieu qu'ici, quand ce tri est choisi, et se
+     mémorise sous l'empreinte des suggestions. */
+  const tri = S.tris.collection;
+  if (tri === 'score') notesCollection(list);
+  return list.sort((TRIS[tri] || TRIS.cmc).cmp);
+}
+
+/* Ce qui écarte des cartes de la collection affichée, cause par cause, dans
+   l'ordre où les critères s'appliquent. Les couleurs cochées et la légalité du
+   format en écartent autant que les champs de la fenêtre, mais ne figuraient
+   nulle part : la ligne annonçait « aucun filtre » devant une collection
+   visiblement amputée, et l'on cherchait un filtre resté en place. */
+function causesCollection() {
+  const out = {couleurs:0, legalite:0, filtres:0, retenues:0};
+  collectionCards().forEach(e => {
+    const c = e.card;
+    if (!colorOK(c)) out.couleurs++;
+    else if (!legaliteOK(c)) out.legalite++;
+    else if (!roleOK(c) || !filtreOK(c)) out.filtres++;
+    else out.retenues++;
+  });
+  return out;
+}
+
+/* La phrase qui les nomme, chacune avec le geste qui la lève. */
+function ligneCausesCollection() {
+  const st = causesCollection();
+  const n = x => x.toLocaleString('fr-FR');
+  const causes = [];
+  if (st.couleurs) causes.push(`${n(st.couleurs)} par vos couleurs (${esc(nomCombinaisonCouleurs(S.colors))}, barre de mana de l'en-tête)`);
+  if (st.legalite) causes.push(`${n(st.legalite)} par la légalité ${esc(fmt().label)} (fenêtre « Format »)`);
+  if (st.filtres) causes.push(`${n(st.filtres)} par vos filtres (bouton « Filtres »${filtresActifs().length ? ` : ${esc(texteFiltresActifs(', '))}` : ''})`);
+  return causes.length ? `écartées : ${causes.join(', ')}` : 'rien n\'est écarté';
 }
 
 function frontFace(n) {
@@ -50,6 +77,14 @@ function mergeInto(card, canonical) {
   if (d) S.deck.set(canonical.name, (S.deck.get(canonical.name) || 0) + d);
   S.collection.delete(card.name);
   S.deck.delete(card.name);
+  /* La réserve et l'étude portent les mêmes noms : elles suivent la fusion,
+     sans quoi la carte y resterait sous un nom que la base ne connaît plus. */
+  CLES_ANNEXES.forEach(cle => {
+    const l = annexeListe(cle), n = l.get(card.name) || 0;
+    if (!n) return;
+    l.set(canonical.name, (l.get(canonical.name) || 0) + n);
+    l.delete(card.name);
+  });
   const i = DB.indexOf(card);
   if (i >= 0) DB.splice(i, 1);
   unindexCard(card);
@@ -66,7 +101,7 @@ function renameCard(card, newName) {
   unindexCard(card);
   card.name = newName;
   indexCard(card);
-  [S.collection, S.deck].forEach(m => {
+  [S.collection, S.deck, ...CLES_ANNEXES.map(annexeListe)].forEach(m => {
     if (m.has(old)) {
       m.set(newName, (m.get(newName) || 0) + m.get(old));
       m.delete(old);
@@ -117,13 +152,24 @@ function parseMtgoList(txt) {
   String(txt).replace(/^\uFEFF/, '').split(/\r?\n/).forEach(raw => {
     let l = raw.replace(/\t+/g, ' ').trim();
     if (!l || /^(\/\/|#)/.test(l)) return;
-    const entete = l.match(/^(deck|sideboard|commander|companion|maybeboard|tokens?)\s*:?\s*$/i);
+    const entete = l.match(/^(deck|sideboard|commander|companion|maybeboard|considering|tokens?)\s*:?\s*$/i);
     if (entete) {
+      /* Les en-têtes reconnus mènent chacun à une liste : le deck, la
+         réserve — le sideboard, et le compagnon qui l'accompagne —, l'étude
+         — le maybeboard des sites de decks —, le commandant. Les jetons
+         restent écartés : ils ne se jouent pas depuis la main. */
       const h = entete[1].toLowerCase();
-      section = h === 'commander' ? 'commandant' : (h === 'deck' ? 'deck' : 'reserve');
+      section = h === 'commander' ? 'commandant'
+        : h === 'deck' ? 'deck'
+        : h === 'sideboard' || h === 'companion' ? 'sideboard'
+        : h === 'maybeboard' || h === 'considering' ? 'considering'
+        : 'jetons';
       return;
     }
-    l = l.replace(/^sb:\s*/i, '');
+    /* « SB: » en tête de ligne est la marque du sideboard dans les listes
+       MTGO : elle vaut section, ligne à ligne. */
+    let sectionLigne = section;
+    if (/^sb:\s*/i.test(l)) { sectionLigne = 'sideboard'; l = l.replace(/^sb:\s*/i, ''); }
     const m = l.match(/^(\d+)\s*[xX]?\s+(.+)$/);
     let qty = 1, nm = l;
     if (m) { qty = parseInt(m[1], 10) || 1; nm = m[2]; }
@@ -136,11 +182,14 @@ function parseMtgoList(txt) {
     nm = nm.replace(/\s*(?:\/\/|\||\/)\s*/g, ' // ').replace(/\s{2,}/g, ' ').trim();
     if (!nm) return;
     // deux impressions d'une même carte restent deux lignes : leurs codes
-    // d'édition et leurs numéros sont conservés l'un et l'autre
-    const k = norm(nm) + '|' + ed.set + '|' + ed.num;
+    // d'édition et leurs numéros sont conservés l'un et l'autre. La section
+    // entre dans la clé depuis que la réserve et l'étude ont leur liste :
+    // sans elle, les deux exemplaires de réserve d'une carte déjà jouée
+    // grossiraient le deck au lieu de rester à côté.
+    const k = norm(nm) + '|' + ed.set + '|' + ed.num + '|' + sectionLigne;
     const dejaVu = out.get(k);
     out.set(k, {name:nm, qty:(dejaVu ? dejaVu.qty : 0) + Math.max(1, qty),
-      section:dejaVu ? dejaVu.section : section, set:ed.set, num:ed.num});
+      section:dejaVu ? dejaVu.section : sectionLigne, set:ed.set, num:ed.num});
   });
   return [...out.values()];
 }
@@ -151,33 +200,48 @@ function renderB() {
   const total = collectionCards().reduce((n, e) => n + e.qty, 0);
   const shown = list.reduce((n, e) => n + e.qty, 0);
   const unk = collectionCards().filter(e => e.card.unknown).length;
-  const page = list.slice(0, S.limitB);
-  const rest = list.length - page.length;
+  /* La page se remplit groupe par groupe, dans l'ordre où ils s'affichent :
+     couper dans une liste seulement triée sèmerait quelques cartes dans
+     chaque groupe au lieu de remplir les premiers. */
+  const mode = S.groupes.collection;
+  const groupes = groupeCartes(list, mode, S.tris.collection);
+  const totalGroupes = groupes.reduce((n, g) => n + g.total, 0);
+  let place = S.limitB;
+  const pageGroupes = [];
+  groupes.forEach(g => {
+    /* Une catégorie repliée ne coûte aucune place : ses cartes ne sont pas
+       rendues, les catégories ouvertes en profitent, et elle garde son
+       en-tête — replier la première fait donc apparaître les suivantes. */
+    if (groupePlie('collection', mode, g.id)) { pageGroupes.push({...g, entrees:[]}); return; }
+    if (place <= 0) return;
+    const part = g.entrees.slice(0, place);
+    place -= part.length;
+    pageGroupes.push({...g, entrees:part});
+  });
+  const page = pageGroupes.reduce((acc, g) => acc.concat(g.entrees), []);
+  const rest = totalGroupes - page.length;
   const actifs = filtresActifs();
 
   const bodyEl = document.getElementById('bodyB');
   if (bodyEl) {
     bodyEl.innerHTML = `
       <div class="row" style="margin-bottom:10px">
-        <select data-act="sort">
-          ${[['cmc','Tri : coût de mana'],['price','Tri : prix'],['alpha','Tri : alphabétique'],['type','Tri : type'],['qty','Tri : quantité']]
-            .map(([k,l]) => `<option value="${k}" ${S.sort===k?'selected':''}>${l}</option>`).join('')}
-        </select>
+        ${barreGroupeTri('collection')}
         <div class="seg">
           <button data-view="grid" aria-pressed="${S.view==='grid'}">Grille</button>
           <button data-view="list" aria-pressed="${S.view==='list'}">Liste</button>
         </div>
-        <button class="btn" data-act="toggleImages" aria-pressed="${S.images}" title="Afficher les visuels des cartes">Visuels</button>
+        ${S.view === 'grid' ? menuColonnes('collection') : ''}
         <button class="btn" data-act="addCard">Ajouter</button>
         <button class="btn" data-act="import">Importer MTGO</button>
         ${unk ? `<button class="btn" data-act="enrich">Compléter ${unk} carte${unk>1?'s':''}</button>` : ''}
         <button class="btn danger" data-act="wipe">Vider</button>
       </div>
-      <div class="small muted" style="margin-bottom:8px">${list.length} cartes différentes après filtrage · ${shown} exemplaires sur ${total} dans la collection${rest>0?` · ${page.length} affichées`:''} · ${actifs.length ? `${actifs.length} filtre(s) réglés dans l'en-tête` : 'aucun filtre : bouton « Filtres » de l\'en-tête'}</div>
+      <div class="small muted" style="margin-bottom:8px">${list.length} carte(s) différente(s) retenue(s) sur ${collectionCards().length} · ${shown} exemplaires sur ${total} dans la collection · ${ligneCausesCollection()}${rest>0?` · <b>${page.length} affichées</b> ici, les autres au bouton du bas`:''}${noteMultiple(mode)}</div>
       ${unk ? `<div class="warnbox">${unk} carte${unk>1?'s ont':' a'} été importée${unk>1?'s':''} sans coût de mana ni texte : leur couleur, leur courbe et leurs capacités restent inconnues tant qu'elles ne sont pas complétées.</div>` : ''}
-      ${page.length ? (S.view === 'grid'
-        ? `<div class="grid">${page.map(e => cardTile(e, 'collection')).join('')}</div>`
-        : `<div class="list">${page.map(e => cardRow(e, 'collection')).join('')}</div>`)
+      ${pageGroupes.length ? rendGroupes('collection', pageGroupes, mode, ents => S.view === 'grid'
+        ? `${ouvreGrille('collection', 'grid')}${ents.map(e => cardTile(e, 'collection')).join('')}</div>`
+        : `<div class="list">${ents.map(e => cardRow(e, 'collection')).join('')}</div>`)
         : (total === 0
           ? `<div class="empty">Votre collection est vide. Ajoutez une carte, ou importez une liste MTGO, avec les boutons ci-dessus.</div>`
           : `<div class="empty">Aucune carte ne passe les filtres. Élargissez les couleurs${actifs.length ? " ou assouplissez les filtres" : ''} depuis le bouton « Filtres » de l'en-tête.</div>`)}
@@ -193,7 +257,7 @@ function openImport(cible) {
   const versDeck = cible === 'deck';
   openDialog(versDeck ? 'Importer un deck (format MTGO)' : 'Importer une liste MTGO',
     `<p class="small muted">Une carte par ligne, au format « 4 Sol Ring ». Le code d'édition entre parenthèses et le numéro de collection qui le suit sont relevés (« 1 Sol Ring (LTC) 344 », « 1 [ELD#331] Arcane Signet ») : la carte est alors demandée à Scryfall dans cette impression précise, avec son visuel, son illustrateur et son prix. Les autres commentaires sont ignorés. ${versDeck
-      ? 'Les en-têtes « Sideboard » et « Commander » sont reconnus : la réserve est écartée, le commandant est désigné automatiquement.'
+      ? 'Les en-têtes sont reconnus : « Sideboard » (et les lignes « SB: ») remplit la réserve, « Maybeboard » ou « Considering » les cartes à l\'étude, « Commander » désigne le commandant, les jetons sont écartés.'
       : 'Les cartes absentes de la base sont créées puis complétées.'}</p>
      <div class="row" style="gap:8px;align-items:center">
        <label class="btn" for="impFile" style="margin:0;cursor:pointer">Choisir un fichier…</label>
@@ -201,7 +265,7 @@ function openImport(cible) {
        <span class="small muted" id="impInfo">ou déposez-le sur la zone ci-dessous, ou collez la liste</span>
      </div>
      <textarea id="imp" placeholder="1 Sol Ring (LTC) 344&#10;1 Rhystic Study&#10;4 Lightning Bolt (2X2) 117"></textarea>
-     ${versDeck ? `<label class="row small" style="gap:6px"><input type="checkbox" id="impReplace" checked> Vider le deck avant l'import</label>
+     ${versDeck ? `<label class="row small" style="gap:6px"><input type="checkbox" id="impReplace" checked> Vider le deck, la réserve et l'étude avant l'import</label>
        <label class="row small" style="gap:6px"><input type="checkbox" id="impStock"> Considérer que vous possédez déjà tout (ajoute les manquants à la collection)</label>
        <div class="small muted">Sinon, les cartes absentes de la collection entrent quand même dans le deck et sont comptées à l'achat.</div>` : ''}
      <label class="row small" style="gap:6px"><input type="checkbox" id="impEnrich" checked> Compléter les cartes inconnues via Scryfall (nécessite une connexion)</label>`,
@@ -254,11 +318,16 @@ function openImport(cible) {
     const entries = parseMtgoList(txt);
     // les champs sont lus : la fenêtre a fait son office
     closeDialog();
-    let known = 0, created = 0, qty = 0, reserve = 0, manquants = 0, avecEdition = 0;
+    let known = 0, created = 0, qty = 0, manquants = 0, avecEdition = 0, jetons = 0, doublons = 0;
+    const annexes = {sideboard:0, considering:0};
     const fresh = [];
     let cmd = null;
 
-    if (remplacer) { S.deck.clear(); S.commander = null; }
+    if (remplacer) {
+      S.deck.clear();
+      CLES_ANNEXES.forEach(cle => annexeListe(cle).clear());
+      S.commander = null;
+    }
     entries.forEach(e => {
       let c = find(e.name);
       if (!c) {
@@ -276,7 +345,18 @@ function openImport(cible) {
         qty += e.qty;
         return;
       }
-      if (e.section === 'reserve') { reserve += e.qty; return; }
+      if (e.section === 'jetons') { jetons += e.qty; return; }
+      /* La réserve et l'étude ont désormais leur place dans la section Deck :
+         ces lignes ne sont plus jetées, elles y vont. Une carte que la liste
+         principale porte déjà y reste — le deck l'emporte, et la ligne est
+         comptée à part plutôt que d'être perdue en silence. */
+      if (ANNEXES[e.section]) {
+        if (S.deck.get(c.name)) { doublons += e.qty; return; }
+        const l = annexeListe(e.section);
+        l.set(c.name, (l.get(c.name) || 0) + e.qty);
+        annexes[e.section] += e.qty;
+        return;
+      }
       const pose = deckAdd(c, e.qty, {completer, force:true});
       qty += pose;
       manquants += deckAdd.dernierAchat || 0;
@@ -293,9 +373,11 @@ function openImport(cible) {
 
     setTimeout(() => {
       S.limitB = PAGE;
-      renderAll();
+      recalculerAvecProgression(versDeck
+        ? 'Deck importé : les candidates sont rebâties et notées d\'après lui.'
+        : 'Collection importée : les cartes retenues et les suggestions sont recalculées.');
       toast(versDeck
-        ? `${qty} carte(s) placées dans le deck${reserve ? ` · ${reserve} en réserve ignorées` : ''}${cmd ? ` · commandant : ${cmd}` : ''}${manquants ? ` · ${manquants} à acheter pour ${eur(spent())}` : ''}${created ? ` · ${created} carte(s) créées` : ''}${avecEdition ? ` · ${avecEdition} ligne(s) avec édition` : ''}.`
+        ? `${qty} carte(s) placées dans le deck${CLES_ANNEXES.filter(cle => annexes[cle]).map(cle => ` · ${annexes[cle]} en ${ANNEXES[cle].titre.toLowerCase()}`).join('')}${jetons ? ` · ${jetons} jeton(s) ignorés` : ''}${doublons ? ` · ${doublons} déjà dans la liste principale` : ''}${cmd ? ` · commandant : ${cmd}` : ''}${manquants ? ` · ${manquants} à acheter pour ${eur(spent())}` : ''}${created ? ` · ${created} carte(s) créées` : ''}${avecEdition ? ` · ${avecEdition} ligne(s) avec édition` : ''}.`
         : `${entries.length} ligne(s) lues · ${qty} exemplaires · ${known} carte(s) déjà connues · ${created} créée(s)${avecEdition ? ` · ${avecEdition} ligne(s) avec édition` : ''}.`);
       if (wantEnrich && fresh.length) completeUnknown(fresh);
     }, 10);
@@ -303,13 +385,17 @@ function openImport(cible) {
 }
 
 function ajouterCarte(c, q, cible, completer) {
+  if (ANNEXES[cible]) {
+    versAnnexe(c.name, cible, q);
+    return;
+  }
   if (cible === 'deck') {
     const n = deckAdd(c, q, {completer});
-    renderAll();
+    recalculerAvecProgression(`${c.name} ajoutée au deck : les suggestions sont renotées d'après le deck qui vient de changer.`);
     toast(n ? `${c.name} ×${n} ajoutée(s) au deck.` : `${c.name} : limite de ${fmt().maxCopies} copie(s) atteinte.`);
   } else {
     S.collection.set(c.name, (S.collection.get(c.name) || 0) + q);
-    renderAll();
+    recalculerAvecProgression(`${c.name} ajoutée à la collection : les suggestions en tiennent compte.`);
     toast(`${c.name} ×${q} ajoutée(s) à la collection.`);
   }
 }
@@ -398,10 +484,12 @@ function majResultats(cible, sansRelancer) {
 
 function openAdd(cible) {
   const versDeck = cible === 'deck';
+  const annexe = ANNEXES[cible];
   scryRes = new Map();
   scryEtat = '';
   clearTimeout(scryTimer);
-  openDialog(versDeck ? 'Ajouter une carte au deck' : 'Ajouter une carte à la collection',
+  openDialog(annexe ? `Ajouter une carte à ${annexe.article}`
+    : versDeck ? 'Ajouter une carte au deck' : 'Ajouter une carte à la collection',
     `<div class="row" style="align-items:flex-end">
        <div class="field" style="flex:1;min-width:180px"><label class="lab" for="addN">Rechercher</label>
          <input id="addN" type="text" data-recherche="${cible}" placeholder="nom de la carte…" autocomplete="off"></div>
@@ -409,6 +497,7 @@ function openAdd(cible) {
          <input id="addQ" type="number" min="1" value="1" style="width:90px"></div>
      </div>
      ${versDeck ? `<label class="row small" style="gap:6px"><input type="checkbox" id="addStock"> Ajouter aussi à la collection (sinon la carte est comptée à l'achat)</label>` : ''}
+     ${annexe ? `<div class="small muted">${esc(annexe.aide)} Une carte posée ici quitte le deck s'il la portait : les trois listes s'excluent.</div>` : ''}
      <div id="addRes">${resultatsHTML('', cible)}</div>`,
     '<button class="btn" value="cancel">Fermer</button>', true);
 }

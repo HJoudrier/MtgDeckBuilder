@@ -4,6 +4,11 @@
 
 let SYMS = null;
 
+/* Chaque carte complétée par Scryfall — texte, coût, prix, légalité — peut
+   changer sa note. Ce compteur entre dans l'empreinte des suggestions, qui
+   sans lui resservirait une sélection notée sur des cartes incomplètes. */
+let MAJ_CARTES = 0;
+
 async function loadSymbology() {
   if (typeof fetch !== 'function' || SYMS) return;
   try {
@@ -83,17 +88,30 @@ function applyScryfall(sc, requested, imagesOnly) {
   const price = parseFloat(pr.eur || pr.eur_foil || pr.usd || 0) || 0;
   const uris = sc.image_uris || (faces && faces[0] && faces[0].image_uris) || null;
   const versoUris = faces && faces[1] && faces[1].image_uris || null;
+  /* La légalité d'une carte que l'archive ne connaît pas — une carte importée,
+     par exemple — ne peut venir que d'ici. */
+  const legal = codeLegalite(sc.legalities);
   let target = (requested && typeof requested === 'object')
     ? requested
     : (BY_NAME[norm(sc.name)] || LOOSE[loose(sc.name)] || (requested ? find(requested) : null));
 
   if (target && (imagesOnly || !target.unknown)) {
-    majTexteOracle(target, text);
+    /* Ce qui change la note de la carte, par opposition aux visuels et aux
+       adresses : c'est cela seul que `MAJ_CARTES` compte, et cela seul qui
+       périme la sélection des suggestions. Une réponse qui n'apporte qu'une
+       illustration — le cas le plus courant, la file des visuels tournant
+       sans cesse — ne doit rien faire recalculer. */
+    let fond = false;
+    fond = majTexteOracle(target, text) || fond;
     completeImpression(target, sc);
     if (Array.isArray(sc.color_identity) && !/^basic land/i.test(target.type || '')) {
-      target.identity = sc.color_identity.slice();
+      const avant = (target.identity || []).join('');
+      if (avant !== sc.color_identity.join('')) {
+        target.identity = sc.color_identity.slice();
+        fond = true;
+      }
     }
-    if (typeof sc.cmc === 'number') target.cmc = sc.cmc;
+    if (typeof sc.cmc === 'number' && target.cmc !== sc.cmc) { target.cmc = sc.cmc; fond = true; }
     /* Une illustration choisie à la main fait autorité : seule une réponse
        portant sur cette impression-là peut la remplacer. */
     const cleRep = cleImpression(sc.set, sc.collector_number);
@@ -108,16 +126,25 @@ function applyScryfall(sc, requested, imagesOnly) {
       target.imgBL = versoUris.large || target.imgB;
     }
     if (sc.purchase_uris && sc.purchase_uris.cardmarket) target.cmUrl = sc.purchase_uris.cardmarket;
-    if (pr.eur) target.price = parseFloat(pr.eur) || target.price;
+    if (pr.eur) {
+      const eurVal = parseFloat(pr.eur) || target.price;
+      if (target.price !== eurVal) { target.price = eurVal; fond = true; }
+    }
     const pw = sc.power || (faces && faces[0] && faces[0].power);
     if (pw != null && /^\d+$/.test(String(pw)) && target.force !== +pw) {
       target.force = +pw;
       reanalyser(target);
+      fond = true;
     }
     const tg = sc.toughness || (faces && faces[0] && faces[0].toughness);
-    if (tg != null && /^\d+$/.test(String(tg))) target.endurance = +tg;
+    if (tg != null && /^\d+$/.test(String(tg)) && target.endurance !== +tg) {
+      target.endurance = +tg;
+      fond = true;
+    }
     const art = sc.artist || (faces && faces[0] && faces[0].artist);
     if (art) target.artist = art;
+    if (legal !== undefined && target.legal !== legal) { target.legal = legal; fond = true; }
+    if (fond) MAJ_CARTES++;
     return true;
   }
 
@@ -131,6 +158,7 @@ function applyScryfall(sc, requested, imagesOnly) {
   if (tg != null && /^\d+$/.test(String(tg))) fresh.endurance = +tg;
   const art = sc.artist || (faces && faces[0] && faces[0].artist);
   if (art) fresh.artist = art;
+  if (legal !== undefined) fresh.legal = legal;
   reanalyser(fresh);
 
   if (!target) {
@@ -445,8 +473,8 @@ async function chercheImpressions(card) {
 
 /* Toutes les éditions publiées d'une carte, à la demande seulement : une
    recherche « unique=prints », dont on suit les pages jusqu'à trois. Les
-   éditions numériques sont écartées — la collection et les prix affichés
-   sont ceux du papier. */
+   éditions numériques sont écartées, sauf si la fenêtre du catalogue les
+   autorise — la collection et les prix affichés sont ceux du papier. */
 async function chercheToutesEditions(card) {
   if (!card || typeof fetch !== 'function') return false;
   if (card.editionsEtat === 'chargement' || card.editionsEtat === 'ok') return false;
@@ -454,7 +482,7 @@ async function chercheToutesEditions(card) {
   card.editionsErreur = '';
   const nom = String(card.name || '').replace(/"/g, '');
   let url = 'https://api.scryfall.com/cards/search?unique=prints&order=released&dir=desc&q='
-          + encodeURIComponent('!"' + nom + '" game:paper');
+          + encodeURIComponent('!"' + nom + '"' + (S.catalogueNumeriques ? '' : ' game:paper'));
   const out = [];
   try {
     for (let page = 0; page < 3 && url; page++) {

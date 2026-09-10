@@ -133,7 +133,7 @@ function renderD() {
 
   const emptyMsg = {
     collection: 'Aucune carte ne passe les filtres en cours.',
-    all: 'Votre collection est vide : ajoutez ou importez des cartes en section A.',
+    all: 'Votre collection est vide : ajoutez ou importez des cartes depuis <button type="button" class="btn sm" data-onglet="collection">l\'onglet Collection</button>.',
     deck: 'Le deck est vide.',
     suggestions: 'Aucune suggestion pour le moment.'
   }[S.graphSource] || 'Aucune carte.';
@@ -154,7 +154,10 @@ function renderD() {
       <div class="graphbox">${svgGraph(g)}</div>
       <div class="legend">${Object.entries(GROUPS).map(([k,v]) => `<span class="lg"><span class="dot" style="background:${v.color}"></span>${v.label}</span>`).join('')}</div>
       ${focusInfo}
-      <div style="margin-top:8px"><button class="btn" data-act="graphToF">${actifs.length ? 'Proposer des cartes branchées sur ces nœuds' : 'Voir les suggestions d\'ajout'}</button></div>
+      <!-- Les pistes branchées sur les nœuds isolés sont juste dessous, dans
+           la même page (secG) ; sans nœud isolé, il n'y a rien à y distinguer
+           et le bouton mène au classement complet, dans l'onglet Catalogue. -->
+      <div style="margin-top:8px"><button class="btn" data-act="allerSection" data-sec="${actifs.length ? 'secG' : 'secF'}">${actifs.length ? 'Voir les pistes branchées sur ces nœuds' : 'Voir les suggestions du catalogue'}</button></div>
       <div class="small muted" style="margin-top:8px">${NODES.length} évènements possibles ; seuls ceux que vos cartes touchent sont nommés. Cliquez un nœud pour le détail.
         Chaque arc va d'un déclencheur vers un effet produit. Une carte peut poser plusieurs arcs. Les arcs pointillés sont les enchaînements permis par les règles (un jeton qui arrive déclenche les effets d'arrivée en jeu, un trésor sacrifié produit du mana…).</div>`;
   }

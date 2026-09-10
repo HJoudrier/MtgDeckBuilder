@@ -385,12 +385,24 @@ function categories(card) {
     if (surLuiMeme(e) && /(?:owner's|your) (?:library|hand|graveyard)/.test(e)) return true;
     return /\byou control\b|\bto you\b|\byourself\b|\byour (?:creatures?|permanents?|lands?|hand|library|graveyard)\b/.test(e);
   };
+  /* Un balayage porte sur ce qui est en jeu : des permanentes, non des
+     joueurs. « Inflige 2 blessures à chaque adversaire » frappe tout le monde
+     sans rien retirer du champ de bataille — c'est du dégât de masse, et
+     Purphoros n'est pas un board wipe. */
   const enMasse = x => {
     const e = effet(x);
     // « le dessus de la bibliothèque de chaque joueur » ne balaie rien
     if (/(?:player|opponent)['\u2019]s (?:library|hand|graveyard)/.test(e)) return false;
-    return /\b(?:all|each|every)\s+(?:other\s+)?(?:creature|permanent|artifact|enchantment|land|nonland|player|opponent)/.test(e);
+    return /\b(?:all|each|every)\s+(?:other\s+)?(?:creature|permanent|artifact|enchantment|land|nonland)/.test(e);
   };
+  /* Le sacrifice imposé à la table vide le champ de bataille aussi sûrement
+     qu'une destruction : « chaque joueur sacrifie une créature ». C'est le
+     seul balayage qui passe par les joueurs, et il nomme sa cible. */
+  const sacrificeGeneral = x =>
+    /\b(?:all|each|every)\s+(?:other\s+)?(?:player|opponent)s?\b[^.]*\bsacrifices?\b[^.]*\b(?:creature|permanent|artifact|enchantment|land)/.test(effet(x));
+  /* Une force retirée en masse tue comme une destruction : « toutes les
+     créatures gagnent -X/-X ». Un bonus, lui, ne balaie rien. */
+  const affaiblitEnMasse = x => enMasse(x) && /-\s*[\dx]+\s*\/\s*-\s*[\dx]+/.test(effet(x));
 
   if (/creature/.test(t)) c.add('creatures');
   if (/land/.test(t)) c.add('terrains');
@@ -415,7 +427,9 @@ function categories(card) {
      le champ de bataille, quoi qu'en dise la lettre de son texte. */
   const emphase = /\boverload\b/.test(tx);
   if (vers(['DESTRUCTION', 'EXIL', 'DEGATS', 'MIS_EN_BIBLIO', 'BOUNCE'],
-    x => (enMasse(x) || emphase) && !surSoi(x))) c.add('wipe');
+        x => (enMasse(x) || emphase) && !surSoi(x))
+      || vers(['SACRIFICE'], sacrificeGeneral)
+      || vers(['BOOST'], x => affaiblitEnMasse(x) && !surSoi(x))) c.add('wipe');
 
   /* Protection : pour nos permanentes, pas pour celles d'en face. */
   if (vers(['INDESTRUCTIBLE', 'LINCEUL', 'PROTECTION'], x => x.scopeEff !== 'adv')) c.add('protection');
@@ -548,6 +562,16 @@ function registerCard(card) {
    s'ajoutent les unes aux autres sur la même carte.
    --------------------------------------------------------------------- */
 
+/* Légalité d'une carte, réduite aux formats que l'atelier connaît : une
+   chaîne de lettres — « c » pour Commander, « s » pour Standard. La chaîne
+   vide dit « légale dans aucun des deux » ; `undefined` dit « nous l'ignorons »,
+   ce qui n'est pas la même chose et ne doit jamais faire écarter une carte. */
+function codeLegalite(legalities) {
+  if (!legalities || typeof legalities !== 'object') return undefined;
+  return (legalities.commander === 'legal' ? 'c' : '')
+       + (legalities.standard === 'legal' ? 's' : '');
+}
+
 function cleImpression(set, num) {
   const s = String(set == null ? '' : set).trim().toLowerCase();
   const n = String(num == null ? '' : num).trim().toLowerCase();
@@ -627,8 +651,29 @@ function commandantsPossibles() {
   return deckEntries().map(e => e.card).filter(peutCommander);
 }
 
-function commandantsSecondaires() {
+/* Les commandants principaux du deck. Un seul se désigne aujourd'hui — l'étoile
+   de l'onglet Deck, `S.commander` —, mais la liste en attend plusieurs : deux
+   cartes liées par « Partner » commandent ensemble, et c'est ici, en un seul
+   endroit, qu'elles s'ajouteraient. Tout ce qui les affiche parcourt donc une
+   liste, non une carte. */
+function commandantsPrincipaux() {
+  const c = S.commander ? find(S.commander) : null;
+  return c ? [c] : [];
+}
+
+/* Toutes les cartes du deck qui pourraient commander, les commandants
+   principaux mis à part : la liste que l'onglet EDHREC affiche, cochées ou
+   non. */
+function commandantsSecondairesPossibles() {
   return deckEntries().map(e => e.card).filter(c => peutCommander(c) && (!S.commander || c.name !== S.commander));
+}
+
+/* Celles qu'on traite effectivement comme commandants secondaires : les autres
+   ont été décochées dans l'onglet EDHREC (`S.secondairesOff`). Tout ce qui
+   croise l'atelier avec EDHREC passe par ici — les statistiques demandées, les
+   étiquettes des vignettes, l'empreinte de la notation. */
+function commandantsSecondaires() {
+  return commandantsSecondairesPossibles().filter(c => !S.secondairesOff.has(c.name));
 }
 
 function mainType(c) {
