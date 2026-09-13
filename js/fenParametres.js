@@ -1,26 +1,16 @@
 /* =====================================================================
    js/fenParametres.js — Fenêtre « Paramètres »
 
-   Ouverte par l'engrenage de l'en-tête. Trois réglages généraux vivaient dans
+   Ouverte par l'engrenage de l'en-tête. Des réglages généraux vivaient dans
    deux fenêtres ouvertes par des étiquettes qu'on ne devinait pas cliquables :
-   la sauvegarde locale, la collection et le catalogue sont désormais trois
+   la sauvegarde locale, l'apparence et le catalogue sont désormais trois
    sections d'une seule fenêtre.
-   ===================================================================== */
 
-/* =====================================================================
-   Fenêtre « Paramètres », ouverte par l'engrenage de l'entête.
-
-   Trois réglages généraux vivaient dans deux fenêtres, elles-mêmes ouvertes
-   par deux pastilles de l'entête qui comptaient tout autre chose — le nombre
-   de cartes retenues. La sauvegarde locale, les données de la collection et
-   le catalogue tiennent désormais dans une seule fenêtre, en trois sections,
-   et les deux pastilles redeviennent ce qu'elles disent : des décomptes.
-
-   La fenêtre mêle deux natures, et le dit : les réglages du catalogue
-   attendent « Appliquer » — filtrer coûte près d'une seconde sur un grand
-   catalogue —, tandis que les actions — enregistrer, exporter, mettre à jour,
-   effacer — agissent au clic. Différer « effacer l'archive » derrière un
-   bouton de validation serait déroutant.
+   Elle mêle deux natures, et le dit : les réglages du catalogue attendent
+   « Appliquer » — filtrer coûte près d'une seconde sur un grand catalogue —,
+   tandis que les actions — enregistrer, exporter, mettre à jour, effacer —
+   agissent au clic. Différer « effacer l'archive » derrière un bouton de
+   validation serait déroutant.
    ===================================================================== */
 
 /* Une section de la fenêtre : un titre, une phrase qui dit ce qu'elle règle,
@@ -33,27 +23,18 @@ function sectionParametres(titre, chapeau, corps) {
   </div>`;
 }
 
-/* Ce que la collection pèse sur cet appareil, et les deux gestes qui la
-   remplissent ou la vident d'un coup. Le détail — ajouter, compléter,
-   grouper — reste dans la section Collection, où l'on a les cartes sous les
-   yeux ; ici, on ne fait qu'entrer et sortir. */
-function corpsCollectionParam() {
-  const cartes = collectionCards();
-  const distinctes = cartes.length;
-  const exemplaires = cartes.reduce((n, e) => n + e.qty, 0);
-  const valeur = cartes.reduce((t, e) => t + (e.card.price || 0) * e.qty, 0);
-  const inconnues = cartes.filter(e => e.card.unknown).length;
-  return `<div class="scroll"><table class="tbl"><tbody>
-      <tr><td>Cartes différentes</td><td>${distinctes.toLocaleString('fr-FR')}</td></tr>
-      <tr><td>Exemplaires</td><td>${exemplaires.toLocaleString('fr-FR')}</td></tr>
-      <tr><td>Valeur estimée</td><td>${eur(valeur)}</td></tr>
-      ${inconnues ? `<tr><td>Cartes incomplètes</td><td>${inconnues.toLocaleString('fr-FR')} — sans coût ni texte tant que Scryfall ne les a pas complétées</td></tr>` : ''}
-    </tbody></table></div>
-    <div class="row" style="gap:6px;margin-top:6px">
-      <button type="button" class="btn sm" data-act="import">Importer une liste MTGO</button>
-      ${inconnues ? `<button type="button" class="btn sm" data-act="enrich">Compléter ${inconnues} carte${inconnues > 1 ? 's' : ''}</button>` : ''}
-      <button type="button" class="btn sm danger" data-act="wipe">Vider la collection</button>
-    </div>`;
+/* L'apparence : le thème sombre, le dessin d'origine de l'atelier, ou le
+   papier clair. La case agit au clic — un thème se juge à l'œil, et le faire
+   attendre « Appliquer » obligerait à fermer la fenêtre pour voir ce qu'on
+   essaie. */
+function corpsApparence() {
+  return `<label class="choix">
+      <input type="checkbox" data-act="modeSombre" ${S.sombre ? 'checked' : ''}>
+      Mode sombre
+    </label>
+    <div class="small muted">L'atelier s'ouvre sur un papier clair. Cochée, il reprend ses teintes
+      sombres — le laiton sur fond d'encre. Le choix est conservé d'une séance à l'autre ; tant que
+      vous n'en faites aucun, l'atelier suit la préférence de votre système.</div>`;
 }
 
 function corpsCatalogue() {
@@ -78,15 +59,25 @@ function corpsCatalogue() {
 }
 
 /* Le corps entier, les trois sections à la suite. La sauvegarde vient en
-   tête : c'est d'elle que dépend tout ce qui suit. */
+   tête : c'est d'elle que dépend tout ce qui suit.
+
+   Une section « Collection » y tenait le décompte des cartes, des exemplaires
+   et leur valeur, avec trois boutons : les chiffres, la section Collection les
+   donne déjà et mieux — sa phrase de causes dit en plus ce que chaque filtre
+   écarte —, et les trois boutons sont ceux de sa barre. Deux endroits pour une
+   même chose, dont l'un obligeait à ouvrir une fenêtre pour lire ce qui était
+   affiché derrière. */
 function corpsParametres() {
   return `<div class="params">
     ${sectionParametres('Sauvegarde locale',
       "Où vivent vos données, et comment les emporter d'un appareil à l'autre.",
       corpsSauvegarde())}
-    ${sectionParametres('Collection',
-      'Ce que votre collection pèse sur cet appareil, et de quoi la remplir ou la vider.',
-      corpsCollectionParam())}
+    ${sectionParametres('Synchronisation',
+      "Emporter collection et deck d'un appareil à l'autre, par votre Dropbox.",
+      corpsNuage())}
+    ${sectionParametres('Apparence',
+      "La teinte de l'atelier.",
+      corpsApparence())}
     ${sectionParametres('Catalogue des cartes',
       "L'archive de toutes les cartes existantes, et ce que les suggestions y puisent.",
       corpsCatalogue())}
@@ -105,12 +96,6 @@ function majFenetreParametres() {
   corps.innerHTML = corpsParametres();
   corps.scrollTop = y;
   brancherParametres();
-}
-
-/* Le nom d'hier, que le chargement du catalogue appelle encore : la fenêtre
-   qu'il rafraîchit est celle des paramètres. */
-function majFenetreCatalogue() {
-  majFenetreParametres();
 }
 
 function brancherParametres() {

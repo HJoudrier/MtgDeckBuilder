@@ -1,13 +1,17 @@
 /* =====================================================================
    js/entete.js — L'en-tête et la barre des onglets
 
-   Le bandeau du haut : les pastilles de format, de budget et de filtres, les
-   compteurs, l'engrenage des paramètres. Puis les onglets, qui ne redessinent
-   rien en changeant — les cinq sections sont déjà peintes, on masque et on
-   démasque, chacun retrouvant son défilement.
+   Le bandeau du haut : la barre de mana et le nom de la combinaison, le format,
+   le budget, les puces des filtres en vigueur ; au coin haut-droit, les boutons
+   « Affichage » et « Filtres », puis l'engrenage des paramètres. Puis les onglets, qui ne
+   redessinent rien en changeant — les cinq sections sont déjà peintes, on masque
+   et on démasque, chacun retrouvant son défilement.
    ===================================================================== */
 
 const FILTRE_ICONE = '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" style="vertical-align:-1px"><path d="M1.2 2.2h13.6L9.4 8.6v5.2L6.6 12.3V8.6z" fill="currentColor"/></svg>';
+
+/* Quatre pavés : la grille d'une liste de cartes, vue de loin. */
+const AFFICHAGE_ICONE = '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" style="vertical-align:-1px"><path d="M1.5 1.5h5.6v5.6H1.5zM8.9 1.5h5.6v5.6H8.9zM1.5 8.9h5.6v5.6H1.5zM8.9 8.9h5.6v5.6H8.9z" fill="currentColor"/></svg>';
 
 /* L'engrenage des paramètres : douze dents posées en couronne et un moyeu
    évidé, dessinés ici plutôt que chargés — l'atelier ne dépend d'aucun
@@ -17,10 +21,35 @@ const PARAM_ICONE = `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden
   <path fill="currentColor" d="M20.3 13.6a8.6 8.6 0 0 0 0-3.2l1.8-1.4-1.8-3.1-2.1.8a8.4 8.4 0 0 0-2.8-1.6L15.1 2h-3.6l-.3 2.3H11a8.4 8.4 0 0 0-2.7 1.6l-2.1-.8-1.8 3.1 1.8 1.4a8.6 8.6 0 0 0 0 3.2l-1.8 1.4 1.8 3.1 2.1-.8a8.4 8.4 0 0 0 2.8 1.6l.3 2.3h3.6l.3-2.3a8.4 8.4 0 0 0 2.8-1.6l2.1.8 1.8-3.1-1.8-1.4zm-1.6-1.6c0 .5-.05 1-.15 1.5l-.12.6 1.5 1.16-.53.92-1.76-.67-.46.4c-.73.64-1.6 1.14-2.53 1.45l-.58.2-.26 1.94h-1.06l-.26-1.95-.58-.19a6.9 6.9 0 0 1-2.53-1.46l-.46-.4-1.76.67-.53-.92 1.5-1.15-.12-.6a7.2 7.2 0 0 1 0-3l.12-.6-1.5-1.16.53-.92 1.76.67.46-.4A6.9 6.9 0 0 1 11.7 6.5l.58-.2.26-1.94h1.06l.26 1.95.58.19c.93.31 1.8.81 2.53 1.46l.46.4 1.76-.67.53.92-1.5 1.15.12.6c.1.5.15 1 .15 1.5z"/>
 </svg>`;
 
+/* ---------------------------------------------------------------------
+   Le bouton « Affichage », au coin haut-droit avec celui des filtres.
+
+   Il vivait dans la barre de chaque page — cinq boutons identiques pour un même
+   réglage, chacun poussant les actions de sa section vers la droite. Il n'y en
+   a plus qu'un, voisin des filtres parce qu'ils font la paire : l'un choisit ce
+   qu'on voit, l'autre comment on le voit. Il règle la liste de l'onglet ouvert,
+   que `ONGLETS` nomme (js/etat.js) ; sur un téléphone, son libellé s'efface et il ne
+   reste que la grille dessinée, faute de place au coin.
+   --------------------------------------------------------------------- */
+function listeDeLOngletCourant() {
+  return (ONGLETS[S.onglet] || ONGLETS[CLES_ONGLETS[0]]).liste;
+}
+
+function majBoutonAffichage() {
+  const lucarne = document.getElementById('headAffichage');
+  if (!lucarne) return;
+  const liste = listeDeLOngletCourant();
+  lucarne.innerHTML = `<button type="button" class="btn sm head-filtre head-affichage" data-act="affichage" data-liste="${liste}"
+    title="${esc(LISTES_AFFICHAGE[liste].titre)} : ${esc(resumeAffichage(liste))}">
+    ${AFFICHAGE_ICONE} <span class="head-affichage-t">Affichage</span>
+  </button>`;
+}
+
 /* La hauteur de l'entête, publiée pour le CSS : les sections s'en servent
    comme marge de défilement et s'arrêtent sous elle plutôt que derrière. Elle
-   se relève après coup — l'entête se replie et ses pastilles s'enroulent, si
-   bien qu'une mesure prise avant l'écriture donnerait la hauteur d'avant. */
+   se relève après coup — les pastilles et les puces de filtres s'enroulent sur
+   autant de lignes qu'il leur en faut, si bien qu'une mesure prise avant
+   l'écriture donnerait la hauteur d'avant. */
 function majHauteurEntete() {
   const entete = document.getElementById('topHeader');
   if (entete) document.documentElement.style.setProperty('--h-entete', entete.offsetHeight + 'px');
@@ -28,8 +57,6 @@ function majHauteurEntete() {
 
 function renderTop() {
   const topStats = document.getElementById('topStats');
-  const topHeader = document.getElementById('topHeader');
-  if (topHeader) topHeader.classList.toggle('compact', !!S.headerCompact);
   if (!topStats) { majHauteurEntete(); return; }
 
   const f = fmt();
@@ -68,14 +95,16 @@ function renderTop() {
     </button>
   `;
 
-  /* Tous les filtres en vigueur restent lisibles et retirables dans l'en-tête. */
+  /* Tous les filtres en vigueur restent lisibles et retirables dans l'en-tête,
+     un par un. Un bouton « Tout effacer » les suivait : il doublait le
+     « Réinitialiser » de la fenêtre des filtres, et sa place variait au gré des
+     puces — on visait la croix d'un filtre, on effaçait les cinq autres. */
   const filtreChipsHTML = actifs.length ? `
     <div class="head-filtres" role="group" aria-label="Filtres actifs">
       ${actifs.map(a => `<span class="filtre-chip" title="${esc(a.texte)}">
         <button type="button" class="chip-txt" data-act="filtres">${esc(a.texte)}</button>
         <button type="button" class="chip-x" data-act="dropFiltre" data-cles="${esc(a.cles.join(','))}" title="Retirer ce filtre" aria-label="Retirer le filtre ${esc(a.texte)}">✕</button>
       </span>`).join('')}
-      <button type="button" class="btn sm" data-act="resetFiltres" title="Retirer tous les filtres">Tout effacer</button>
     </div>` : '';
 
   /* Le budget se règle dans sa fenêtre, et cette pastille en est la porte :
@@ -87,12 +116,6 @@ function renderTop() {
         : 'Aucun budget : seules les cartes de votre collection sont proposées — cliquer pour en fixer un'}">Budget <b>${S.budget.total > 0 ? eur(Math.max(0, left)) : '—'}</b></button>
   `;
 
-  const toggleBtnHTML = `
-    <button type="button" class="btn sm head-toggle ${S.headerCompact ? 'is-compact' : ''}" data-act="toggleHeader" title="${S.headerCompact ? 'Déplier l\'en-tête (afficher toutes les statistiques et actions)' : 'Réduire l\'en-tête (navigation compacte)'}" aria-pressed="${!S.headerCompact}">
-      ${S.headerCompact ? '▾ Stats' : '▴ Réduire'}
-    </button>
-  `;
-
   /* Deux pastilles disaient ici ce que la collection retenait et ce que le
      catalogue contenait. Les sections le disent déjà, et mieux : la phrase de
      causes de la collection énumère ce qui écarte chaque carte, et
@@ -100,12 +123,15 @@ function renderTop() {
      retirer épargne, à chaque rendu de l'entête, un filtrage complet de la
      collection et un parcours de tout le catalogue — et l'entête se rend deux
      fois par repeint, `renderB()` le redemandant après `renderAll()`. */
+  /* L'ordre des pastilles suit celui des questions : quelles couleurs, quel
+     format — c'est lui qui commande la légalité et la taille du deck —, puis
+     les filtres en vigueur et le budget. Le format venait après les puces de
+     filtres, dont le nombre change : il se déplaçait d'un rendu à l'autre. */
   topStats.innerHTML = `
     ${manaBarHTML}
-    ${filtreChipsHTML}
     ${deckPillHTML}
+    ${filtreChipsHTML}
     ${budgetPillHTML}
-    ${toggleBtnHTML}
   `;
 
   /* L'engrenage et le bouton des filtres partagent le coin haut-droit : tous
@@ -116,6 +142,7 @@ function renderTop() {
   if (param && !param.firstChild) param.innerHTML = PARAM_ICONE;
   const lucarne = document.getElementById('headFiltre');
   if (lucarne) lucarne.innerHTML = filtreBtnHTML;
+  majBoutonAffichage();
 
   majHauteurEntete();
 }
@@ -150,6 +177,9 @@ function renderOnglets() {
   document.querySelectorAll('.page[data-page]').forEach(p => {
     p.hidden = p.dataset.page !== S.onglet;
   });
+  /* Le bouton « Affichage » règle la liste de l'onglet ouvert : il change donc
+     de cible en même temps que la page, sans que l'entête soit repeint. */
+  majBoutonAffichage();
 }
 
 /* Passer d'un onglet à l'autre : rien n'est redessiné, les cinq sections
