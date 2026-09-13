@@ -81,7 +81,7 @@ sequenceDiagram
     participant CARTES as cartes.js
     participant STOCK as stockage.js
     participant UI as interface
-    participant EXT as externes.js
+    participant EXT as catalogue.js
 
     NAV->>APP: DOMContentLoaded
     APP->>APP: demarrer()
@@ -117,7 +117,7 @@ sequenceDiagram
     participant SUG as suggestions.js
     participant DECK as deck.js
     participant UI as interface
-    participant EXT as externes.js
+    participant EXT as catalogue.js
     participant STOCK as stockage.js
     participant S as S (état)
 
@@ -172,7 +172,46 @@ Trois précautions que le diagramme rend visibles :
 - **La notation** ne repart que si l'empreinte a changé (§4). Ajouter une carte la change toujours
   — le deck fait partie de l'empreinte.
 
-### 3.3 Retirer une carte du deck
+### 3.3 Ajouter une carte par le champ de recherche
+
+Le champ vit dans la section — la collection ou le deck —, et la frappe ne réécrit que ses
+propositions : réécrire la section volerait le curseur du champ qu'on remplit.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Utilisateur
+    participant APP as app.js
+    participant RECH as rechercheSection.js
+    participant AJOUT as fenAjout.js
+    participant EXT as recherches.js
+    participant SEC as collection.js / deckSection.js
+
+    U->>APP: frappe dans le champ
+    APP->>RECH: saisieRecherche(cible, valeur)
+    RECH->>AJOUT: chercheCartes(q)
+    Note over AJOUT: le catalogue local d'abord, la base livrée à défaut ;<br/>filtré par les couleurs retenues et les nœuds isolés
+    RECH->>RECH: majPropositions(cible)
+    Note over RECH: seules les propositions sont réécrites
+    opt trois lettres, et une pause de 350 ms
+        RECH->>EXT: chercheScryfall(q, cible)
+        EXT->>RECH: majRecherches(cible) — les cartes absentes du catalogue
+    end
+
+    U->>APP: clic sur un nom, sur « + » ou « − », ou molette sur le compteur
+    APP->>RECH: pasRecherche(nom, cible, pas)
+    alt cible = deck
+        RECH->>RECH: addToDeck(nom) / removeFromDeck(nom)
+    else cible = collection
+        RECH->>RECH: ajoutCollection(nom) / retraitCollection(nom)
+    end
+    Note over RECH: mêmes fonctions que les vignettes :<br/>même limite de format, même recalcul annoncé
+    RECH->>SEC: recalculerAvecProgression(...) → renderAll()
+    SEC->>RECH: restaureRecherche(cible)
+    Note over RECH: la frappe revient, et le curseur si<br/>plus rien ne l'a pris entre-temps
+```
+
+### 3.4 Retirer une carte du deck
 
 ```mermaid
 sequenceDiagram
@@ -206,7 +245,7 @@ Le retrait n'est pas le symétrique exact de l'ajout : il ne gèle pas l'ordre d
 geste part d'une tuile du deck, non d'une vignette de la section F ; il n'y a pas de place à
 perdre dans une liste qu'on ne parcourait pas.
 
-### 3.4 Filtrer
+### 3.5 Filtrer
 
 Le seul parcours à deux temps : la fenêtre travaille sur un brouillon, et rien ne s'applique avant
 « Appliquer ».
@@ -218,7 +257,7 @@ sequenceDiagram
     participant APP as app.js
     participant UI as interface
     participant S as S (état)
-    participant EXT as externes.js
+    participant EXT as catalogue.js
     participant SUG as suggestions.js
 
     U->>APP: clic sur la pastille « Filtres »
@@ -258,7 +297,7 @@ Un filtre appliqué hors fenêtre — une couleur cliquée dans l'en-tête, un r
 appelle le même recalcul. C'est le point commun de tous les réglages : **un filtre change le
 vivier, donc tout le classement.**
 
-### 3.5 Noter les suggestions
+### 3.6 Noter les suggestions
 
 Le moteur appelé par les parcours précédents, vu de près.
 
@@ -268,7 +307,7 @@ sequenceDiagram
     participant UI as interface
     participant SUG as suggestions.js
     participant ETAT as etat.js
-    participant EXT as externes.js
+    participant EXT as catalogue.js
     participant MARCHE as marche.js
 
     UI->>SUG: prepareSuggestions(onProgress)
@@ -295,37 +334,62 @@ sequenceDiagram
     end
 ```
 
-### 3.6 Grouper et trier
+### 3.7 Régler l'affichage d'une liste
+
+Les cinq listes de cartes — la collection, le deck, les pistes du graphe, les recommandations
+d'EDHREC, le catalogue — se règlent chacune dans sa fenêtre « Affichage », et rien ne bouge avant
+« Appliquer ». « Appliquer partout » pose le même réglage sur les cinq.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as Utilisateur
     participant APP as app.js
+    participant AFF as fenAffichage.js
+    participant BR as brouillon.js
+    participant SEC as la section réglée
     participant GRP as groupes.js
-    participant SEC as collection.js / deck.js / suggestions.js
 
-    U->>APP: choix dans « Grouper : … » ou « Trier : … »
-    APP->>APP: S.groupes[liste] ou S.tris[liste] = valeur
-    alt section = collection
-        APP->>SEC: renderB()
-        SEC->>SEC: filtered()
-        opt tri « score »
-            SEC->>GRP: notesCollection(list)
-            Note over GRP: notée à la demande, mémorisée sous<br/>l'empreinte des suggestions
-        end
-        SEC->>GRP: groupeCartes(list, mode, tri)
-        SEC->>GRP: rendGroupes(section, groupes, mode, rendu)
-    else section = deck
-        APP->>SEC: renderE()
-    else liste = suggestions (catalogue) ou edhrec
-        APP->>SEC: refreshSuggestions()
-        Note over SEC: deux barres, deux réglages : le catalogue et EDHREC<br/>se rangent chacun de son côté — EDHREC offrant en plus<br/>le taux d'inclusion et la synergie. Le tri « score » ne retrie pas :<br/>la liste arrive déjà ordonnée, ou gelée
+    U->>APP: clic « Affichage » (coin haut-droit de l'entête)
+    Note over APP: le bouton vise la liste de l'onglet ouvert,<br/>et en change avec la page (majBoutonAffichage)
+    APP->>AFF: openAffichageModal(liste)
+    AFF->>BR: ouvreBrouillon(['vues','colonnes','groupes','tris'], majFenetreAffichage)
+    Note over AFF: les quatre mêmes réglages pour les cinq listes<br/>(LISTES_AFFICHAGE, js/etat.js)
+    loop chaque réglage
+        U->>APP: radio, case « Auto », curseur ou menu
+        APP->>AFF: reglageAffichage(...) ou glisseColonnes(...)
+        AFF->>BR: modifieBrouillon(...)
+        Note over AFF: le curseur décoche « Auto » et ne réécrit<br/>que la phrase sous lui — réécrire la fenêtre<br/>emporterait le curseur qu'on tient
+        AFF->>AFF: majFenetreAffichage()
     end
-    APP->>APP: scheduleSave()
+    alt « Appliquer »
+        U->>APP: clic « Appliquer »
+        APP->>AFF: appliquerAffichage(false)
+        AFF->>BR: verseBrouillon()
+        opt le groupement ou le tri de la collection a changé
+            AFF->>AFF: S.limitB = PAGE
+        end
+        AFF->>SEC: renderB(), renderE() ou refreshSuggestions()
+        SEC->>GRP: groupeCartes(), rendGroupes() ou listesSug()
+        AFF->>AFF: scheduleSave()
+    else « Appliquer partout »
+        U->>APP: clic « Appliquer partout »
+        APP->>AFF: appliquerAffichage(true)
+        AFF->>BR: modifieBrouillon(verseAffichagePartout(conf))
+        Note over AFF: le tri va là où la liste l'offre (TRIS_SECTION) :<br/>une liste qui ne le connaît pas garde le sien
+        AFF->>BR: verseBrouillon()
+        AFF->>SEC: renderAll()
+    else Annuler, la croix, Échap, l'arrière-plan
+        APP->>BR: fermetureBrouillon()
+        Note over BR: rien n'ayant été appliqué,<br/>il n'y a rien à défaire
+    end
 ```
 
-### 3.7 Replier une catégorie
+Le tri par score ne retrie pas les propositions : la liste arrive dans l'ordre des scores, ou dans
+l'ordre gelé qu'un ajout a retenu. Le tri par score de la collection, lui, demande une notation —
+`renderB()` l'obtient par `filtered()`, et la mémorise sous l'empreinte des suggestions.
+
+### 3.8 Replier une catégorie
 
 ```mermaid
 sequenceDiagram
@@ -349,7 +413,7 @@ sequenceDiagram
     end
 ```
 
-### 3.8 Importer une liste MTGO
+### 3.9 Importer une liste MTGO
 
 ```mermaid
 sequenceDiagram
@@ -387,7 +451,7 @@ sequenceDiagram
     SCRY-->>UI: applyScryfall() puis nouveau rendu
 ```
 
-### 3.9 Désigner un commandant
+### 3.10 Désigner un commandant
 
 ```mermaid
 sequenceDiagram
@@ -407,7 +471,7 @@ sequenceDiagram
     SUG->>SUG: loadEdhrec() si la signature du commandant a changé
 ```
 
-### 3.10 Enrichir par Scryfall
+### 3.11 Enrichir par Scryfall
 
 Le seul parcours que l'utilisateur ne déclenche pas : il part du rendu lui-même.
 
@@ -441,23 +505,14 @@ Le recalcul de fond ne montre pas de boîte : il gèle l'ordre affiché, avance 
 signale son travail par le liseré des trois sections des propositions. Une carte complétée pendant
 qu'on lit ne doit pas interrompre la lecture.
 
-### 3.11 EDHREC et Commander Spellbook
+### 3.12 EDHREC
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant E as renderE (deck)
     participant F as renderH / renderF (propositions)
-    participant EXT as externes.js
     participant SUG as suggestions.js
-    participant NET as EDHREC / Commander Spellbook
-
-    E->>EXT: scheduleCombos()
-    EXT->>EXT: deckSignature() — déjà vue ?
-    EXT->>EXT: attente de 1200 ms
-    EXT->>NET: POST /find-my-combos
-    NET-->>EXT: combos du deck
-    EXT->>E: renderE() — les étiquettes « combo » paraissent
+    participant NET as EDHREC
 
     F->>SUG: lanceEdhrecSiBesoin()
     SUG->>SUG: signature du commandant et des commandants secondaires
@@ -466,11 +521,10 @@ sequenceDiagram
     SUG->>F: renderSuggestions() — le panneau EDHREC, ses recommandations<br/>et les étiquettes edhrec paraissent
 ```
 
-Les deux sources sont attendues, jamais bloquantes : une signature les empêche de repartir pour un
-deck inchangé, et leur absence ne retire rien au classement, qui repose d'abord sur l'analyse des
-textes.
+La source est attendue, jamais bloquante : une signature l'empêche de repartir pour un commandant
+inchangé, et son absence ne retire rien au classement, qui repose d'abord sur l'analyse des textes.
 
-### 3.12 Acheter sur Cardmarket
+### 3.13 Acheter sur Cardmarket
 
 ```mermaid
 sequenceDiagram
@@ -491,7 +545,7 @@ sequenceDiagram
     DECK->>UI: recalculerAvecProgression(raison)
 ```
 
-### 3.13 Sauvegarder
+### 3.14 Sauvegarder
 
 ```mermaid
 sequenceDiagram
@@ -512,6 +566,59 @@ sequenceDiagram
     end
 ```
 
+### 3.15 Synchroniser avec Dropbox
+
+Le tour se fait toujours dans cet ordre : **tirer, fusionner, verser, pousser**. Pousser d'abord
+écraserait ce qu'on n'a pas encore lu.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant APP as app.js / un geste
+    participant NU as nuage.js
+    participant DBX as nuageDropbox.js
+    participant DROP as Dropbox
+    participant FUS as nuageFusion.js
+    participant IDB as IndexedDB
+    participant STOCK as stockage.js
+    participant UI as interface
+
+    APP->>NU: nuageSynchro()
+    Note over NU: à l'ouverture, au retour sur l'onglet,<br/>ou au plus une fois toutes les 15 s après un geste
+    NU->>DBX: dbxLire(chemin)
+    DBX->>DBX: dbxJetonValide() — rafraîchit 1 min avant l'échéance
+    DBX->>DROP: files/download
+    DROP-->>DBX: octets gzip + rev
+    DBX-->>NU: paquet distant, rev
+    alt aucun fichier là-bas
+        NU->>DBX: dbxEcrire(chemin, octets, rev vide)
+        Note over DBX: mode « add » : refuse d'écraser<br/>si un fichier est apparu entre-temps
+    else le fichier existe
+        NU->>IDB: nuageBaseLire() — le fond du dernier accord
+        NU->>FUS: fusionnePaquets(base, local, distant)
+        Note over FUS: quantités carte par carte, ensembles, scalaires,<br/>cache en union ; les désaccords sont relevés
+        alt le distant avait quelque chose à nous apprendre
+            NU->>STOCK: nuageVerse() → restore(), puis save()
+            NU->>UI: releveAncre() / renderAll() / restaureAncre()
+        end
+        alt nous avons quelque chose à lui donner
+            NU->>DBX: dbxEcrire(chemin, octets, rev lu)
+            DBX->>DROP: files/upload, mode update : rev
+            alt l'autre appareil a écrit pendant l'aller-retour
+                DROP-->>DBX: 409 path/conflict
+                NU->>NU: nuageTour() rejoué une fois sur le nouveau distant
+            end
+        end
+        NU->>IDB: nuageBaseEcrire(le fond tel qu'il a atterri)
+    end
+    NU->>UI: majFenetreParametres() — état, dernier accord, désaccords
+```
+
+La connexion, elle, ne passe qu'une fois par appareil : `dbxConnexion()` quitte la page vers
+Dropbox avec l'empreinte du code de preuve, et `dbxRetourConnexion()` échange le code contre les
+deux jetons au rechargement, puis nettoie l'adresse. Le jeton de rafraîchissement ne meurt pas ;
+celui d'accès se renouvelle tout seul.
+
 ---
 
 ## 4. Ce qui périme quoi
@@ -521,8 +628,8 @@ chacun gardé sous une empreinte : tant que l'empreinte est la même, le travail
 
 | Mémo | Ce qu'il garde | Son empreinte | Ce qui la change |
 |---|---|---|---|
-| `CAND` (`js/externes.js`) | Le vivier tiré du catalogue | `signatureCandidats()` | Format, couleurs, filtres, prix maximum, plafond des candidates, légalité, effets isolés |
-| `SUG_MEMO` (`js/suggestions.js`) | La sélection notée et ordonnée | `signatureSuggestions()` | L'empreinte des candidates, **le deck et son commandant**, la collection, le budget, `MAJ_CARTES`, les données EDHREC et combos |
+| `CAND` (`js/candidats.js`) | Le vivier tiré du catalogue | `signatureCandidats()` | Format, couleurs, filtres, prix maximum, plafond des candidates, légalité, effets isolés |
+| `SUG_MEMO` (`js/vivier.js`) | La sélection notée et ordonnée | `signatureSuggestions()` | L'empreinte des candidates, **le deck et son commandant**, la collection, le budget, `MAJ_CARTES`, les données EDHREC |
 | `NOTES_COLLECTION` (`js/groupes.js`) | Les notes de la collection, pour le tri par score | `signatureSuggestions()` | Les mêmes |
 
 Deux conséquences pratiques :
@@ -534,7 +641,7 @@ Deux conséquences pratiques :
   redessinent, et rien de plus. Seul le premier tri par score de la collection paie une notation,
   une fois.
 
-`invaliderCandidats()` (`js/externes.js`) vide le premier mémo à la main, quand un réglage
+`invaliderCandidats()` (`js/candidats.js`) vide le premier mémo à la main, quand un réglage
 change le vivier sans que l'empreinte suffise à le dire. `apresReglage()` l'appelle pour tout
 réglage venu d'une fenêtre, et `degeleSuggestions()` lève au passage l'ordre gelé : un nouveau
 filtre demande une autre liste, pas l'ancienne dans son ancien ordre.
